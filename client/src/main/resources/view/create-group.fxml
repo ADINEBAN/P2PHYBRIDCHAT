@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.text.Font?>
+
+<VBox spacing="10" alignment="CENTER" xmlns="http://javafx.com/javafx/21"
+      xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.example.client.controller.CreateGroupController"
+      style="-fx-background-color: white; -fx-padding: 20;">
+
+    <Label text="Tạo Nhóm Mới" textFill="#0084ff">
+        <font><Font name="Segoe UI Bold" size="18"/></font>
+    </Label>
+
+    <TextField fx:id="groupNameField" promptText="Đặt tên nhóm..." />
+
+    <Label text="Chọn thành viên:" alignment="CENTER_LEFT" maxWidth="Infinity"/>
+    <ListView fx:id="friendCheckList" VBox.vgrow="ALWAYS" prefHeight="200"/>
+
+    <HBox spacing="10" alignment="CENTER_RIGHT">
+        <Button text="Hủy" onAction="#handleCancel"/>
+        <Button text="Tạo" onAction="#handleCreate" style="-fx-background-color: #0084ff; -fx-text-fill: white;"/>
+    </HBox>
+</VBox>
