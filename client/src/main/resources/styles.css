@@ -1,0 +1,47 @@
+.root {
+    -fx-font-family: 'Segoe UI', sans-serif;
+    -fx-background-color: #f0f2f5;
+}
+
+.login-container {
+    -fx-background-color: white;
+    -fx-background-radius: 8;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 0);
+    -fx-max-width: 350;
+    -fx-max-height: 400;
+}
+
+.input-field {
+    -fx-background-color: #f5f6f7;
+    -fx-background-radius: 4;
+    -fx-border-color: #dddfe2;
+    -fx-border-radius: 4;
+    -fx-padding: 10;
+    -fx-font-size: 14px;
+}
+.input-field:focused {
+    -fx-border-color: #0084ff;
+}
+
+.btn-primary {
+    -fx-background-color: #0084ff;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-font-size: 14px;
+    -fx-padding: 10;
+    -fx-background-radius: 6;
+    -fx-cursor: hand;
+}
+.btn-primary:hover {
+    -fx-background-color: #0073e6;
+}
+
+.btn-link {
+    -fx-background-color: transparent;
+    -fx-text-fill: #0084ff;
+    -fx-cursor: hand;
+    -fx-font-size: 12px;
+}
+.btn-link:hover {
+    -fx-underline: true;
+}

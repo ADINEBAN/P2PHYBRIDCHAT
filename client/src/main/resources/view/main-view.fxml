@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.SplitPane?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.text.Font?>
+
+<SplitPane dividerPositions="0.3" prefHeight="600.0" prefWidth="900.0"
+           stylesheets="@../styles.css" xmlns="http://javafx.com/javafx/21"
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.example.client.controller.MainController">
+
+    <VBox spacing="0" styleClass="sidebar">
+        <HBox alignment="CENTER_LEFT" spacing="10" styleClass="sidebar-header">
+            <padding><Insets bottom="15" left="15" right="15" top="15" /></padding>
+            <Label fx:id="myDisplayName" text="Tên Của Tôi" textFill="#000">
+                <font><Font name="Segoe UI Bold" size="16.0" /></font>
+            </Label>
+        </HBox>
+
+        <ListView fx:id="conversationList" styleClass="conv-list" VBox.vgrow="ALWAYS" />
+
+        <HBox spacing="5" alignment="CENTER">
+            <padding><Insets bottom="10" top="10"/></padding>
+            <Button text="Thêm bạn" styleClass="btn-link" />
+            <Button text="Tạo nhóm" styleClass="btn-link" />
+        </HBox>
+    </VBox>
+
+    <VBox fx:id="chatArea" styleClass="chat-area" visible="false">
+        <HBox alignment="CENTER_LEFT" styleClass="chat-header">
+            <padding><Insets bottom="15" left="20" right="20" top="15" /></padding>
+            <Label fx:id="currentChatTitle" text="Tên người chat" textFill="black">
+                <font><Font name="Segoe UI Bold" size="18.0" /></font>
+            </Label>
+        </HBox>
+
+        <ScrollPane fx:id="msgScrollPane" fitToWidth="true" hbarPolicy="NEVER"
+                    styleClass="msg-scroll" vbarPolicy="AS_NEEDED" VBox.vgrow="ALWAYS">
+            <VBox fx:id="msgContainer" spacing="10" styleClass="msg-container">
+                <padding><Insets bottom="20" left="20" right="20" top="20" /></padding>
+            </VBox>
+        </ScrollPane>
+
+        <HBox alignment="CENTER_LEFT" spacing="10" styleClass="input-box">
+            <padding><Insets bottom="15" left="15" right="15" top="15" /></padding>
+            <TextField fx:id="inputField" onAction="#handleSend" promptText="Nhập tin nhắn..."
+                       styleClass="input-field" HBox.hgrow="ALWAYS" />
+            <Button defaultButton="true" onAction="#handleSend" styleClass="btn-primary" text="Gửi" />
+        </HBox>
+    </VBox>
+
+    <VBox fx:id="welcomeArea" alignment="CENTER" style="-fx-background-color: white;">
+        <Label text="Chào mừng đến với Hybrid Messenger!" textFill="#888">
+            <font><Font size="20" /></font>
+        </Label>
+        <Label text="Chọn một người bạn để bắt đầu trò chuyện." textFill="#aaa"/>
+    </VBox>
+
+</SplitPane>
