@@ -19,6 +19,7 @@ public class AuthServiceImpl extends UnicastRemoteObject implements AuthService 
 
     // Danh sách lưu "cái loa" (Callback) của các user đang online
     // Key: UserId, Value: Callback của Client đó
+    // Đổi private thành public static hoặc thêm getter
     private static final Map<Long, ClientCallback> onlineClients = new ConcurrentHashMap<>();
 
     public AuthServiceImpl() throws RemoteException {
@@ -167,5 +168,9 @@ public class AuthServiceImpl extends UnicastRemoteObject implements AuthService 
     @Override
     public boolean resetPassword(String username, String email, String newPassword) throws RemoteException {
         return false; // Tạm thời chưa cần
+    }
+    // [MỚI] Hàm tiện ích để các Service khác lấy "cái loa" của User
+    public static ClientCallback getClientCallback(long userId) {
+        return onlineClients.get(userId);
     }
 }

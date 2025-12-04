@@ -4,8 +4,13 @@ import com.example.common.dto.UserDTO;
 import java.rmi.Remote;
 import java.rmi.RemoteException;
 
-// Interface này nằm ở Client, nhưng Server sẽ gọi nó!
 public interface ClientCallback extends Remote {
-    // Hàm này sẽ được Server kích hoạt khi có ai đó online/offline/đổi IP
+    // Báo trạng thái Online/Offline (Cũ)
     void onFriendStatusChange(UserDTO friend) throws RemoteException;
+
+    // [MỚI] Báo khi có người gửi lời mời kết bạn
+    void onNewFriendRequest(UserDTO sender) throws RemoteException;
+
+    // [MỚI] Báo khi lời mời của mình được chấp nhận (để cập nhật list ngay)
+    void onFriendRequestAccepted(UserDTO newFriend) throws RemoteException;
 }
