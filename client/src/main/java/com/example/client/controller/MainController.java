@@ -82,6 +82,11 @@ public class MainController {
     public void handleSendFile() {
         if (currentChatUser == null) return;
         FileChooser fileChooser = new FileChooser();
+        // Thêm bộ lọc để dễ chọn ảnh
+        fileChooser.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter("Tất cả file", "*.*")
+        );
+
         File selectedFile = fileChooser.showOpenDialog(mainBorderPane.getScene().getWindow());
 
         if (selectedFile != null) {
@@ -96,11 +101,15 @@ public class MainController {
                     msg.setFileData(fileBytes);
                     msg.setFileName(selectedFile.getName());
 
-                    String lower = selectedFile.getName().toLowerCase();
-                    if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".gif")) {
+                    String lowerName = selectedFile.getName().toLowerCase();
+
+                    // [FIX] Kiểm tra kỹ đuôi file để set loại tin nhắn
+                    if (lowerName.endsWith(".png") || lowerName.endsWith(".jpg") ||
+                            lowerName.endsWith(".jpeg") || lowerName.endsWith(".gif") ||
+                            lowerName.endsWith(".bmp")) {
+
                         msg.setType(MessageDTO.MessageType.IMAGE);
-                        // [QUAN TRỌNG] Gán nội dung để Server nhận biết đây là ảnh khi load lịch sử
-                        msg.setContent("[Hình ảnh]");
+                        msg.setContent("[Hình ảnh]"); // Quan trọng để Server nhận biết
                     } else {
                         msg.setType(MessageDTO.MessageType.FILE);
                         msg.setContent("[Tập tin] " + selectedFile.getName());
@@ -353,12 +362,16 @@ public class MainController {
         } catch (Exception e) { e.printStackTrace(); }
     }
 
+    // --- [FIX] HÀM CUỘN XUỐNG ĐÁY CHUẨN XÁC ---
     private void scrollToBottom() {
-        msgContainer.applyCss();
-        msgContainer.layout();
+        // Kỹ thuật "Double RunLater": Chờ cho layout vẽ xong hoàn toàn mới cuộn
         Platform.runLater(() -> {
+            msgContainer.layout(); // Buộc tính toán lại layout
             msgScrollPane.layout();
-            msgScrollPane.setVvalue(1.0);
+
+            Platform.runLater(() -> {
+                msgScrollPane.setVvalue(1.0); // Cuộn xuống đáy
+            });
         });
     }
 

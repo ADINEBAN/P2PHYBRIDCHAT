@@ -85,27 +85,34 @@ public class ChatUIHelper {
         });
     }
 
-    // --- SỬA LỖI HIỂN THỊ ẢNH TRẮNG ---
+    // [FIX] Sửa lỗi ảnh bị trắng trơn
     private static Node createImageNode(byte[] imageData) {
         try {
             ByteArrayInputStream bis = new ByteArrayInputStream(imageData);
             Image image = new Image(bis);
+
+            // Tạo ImageView
             ImageView imageView = new ImageView(image);
 
-            imageView.setFitWidth(280);
+            // Thiết lập kích thước cố định chiều ngang, chiều dọc tự co giãn
+            imageView.setFitWidth(250);
             imageView.setPreserveRatio(true);
             imageView.setSmooth(true);
 
-            // Bo tròn 20px
+            // [QUAN TRỌNG] Tạo bo góc (Clip)
+            // Sử dụng Rectangle có kích thước bind chặt theo ImageView
             Rectangle clip = new Rectangle();
             clip.setArcWidth(20);
             clip.setArcHeight(20);
 
-            // [FIX] Cập nhật clip theo kích thước thật của ảnh khi layout thay đổi
+            // Ràng buộc chiều rộng/cao của khung cắt theo ảnh
             clip.widthProperty().bind(imageView.fitWidthProperty());
+
+            // Với chiều cao, ta cần lắng nghe thay đổi vì nó tính toán động
             imageView.layoutBoundsProperty().addListener((obs, oldVal, newVal) -> {
-                clip.setWidth(newVal.getWidth());
-                clip.setHeight(newVal.getHeight());
+                if (newVal.getHeight() > 0) {
+                    clip.setHeight(newVal.getHeight());
+                }
             });
 
             imageView.setClip(clip);
@@ -113,10 +120,9 @@ public class ChatUIHelper {
 
         } catch (Exception e) {
             e.printStackTrace();
-            return new Label("❌ Lỗi hiển thị ảnh");
+            return new Label("❌ Lỗi ảnh");
         }
     }
-
     // --- XỬ LÝ NÚT PLAY VOICE ---
     private static Node createAudioNode(MessageDTO msg, boolean isMe) {
         Button playBtn = new Button("▶  Tin nhắn thoại");
@@ -144,29 +150,57 @@ public class ChatUIHelper {
         return playBtn;
     }
 
+    // [FIX] Hiển thị tên file chính xác cả khi load lại lịch sử
     private static Node createFileNode(VBox container, MessageDTO msg, boolean isMe) {
-        String fName = msg.getFileName() != null ? msg.getFileName() : "Tài liệu";
-        // Nếu tên file quá dài thì cắt bớt
-        if (fName.length() > 25) fName = fName.substring(0, 22) + "...";
+        // 1. Ưu tiên lấy tên file gốc (khi vừa gửi xong)
+        String fName = msg.getFileName();
 
-        Button downloadBtn = new Button("📄 " + fName);
+        // 2. Nếu null (do load lịch sử), trích xuất từ nội dung "[Tập tin] ..."
+        if (fName == null || fName.isEmpty()) {
+            if (msg.getContent() != null && msg.getContent().startsWith("[Tập tin] ")) {
+                fName = msg.getContent().substring(10); // Cắt bỏ chữ "[Tập tin] "
+            } else {
+                fName = "Tài liệu"; // Fallback nếu không tìm thấy tên
+            }
+        }
+
+        // Cắt bớt nếu tên quá dài
+        String displayName = fName;
+        if (displayName.length() > 25) displayName = displayName.substring(0, 22) + "...";
+
+        Button downloadBtn = new Button("📄 " + displayName);
         String textColor = isMe ? "white" : "#333333";
         downloadBtn.setStyle("-fx-background-color: transparent; -fx-text-fill: " + textColor + "; -fx-cursor: hand; -fx-font-size: 14px;");
 
-        // Cần biến final để dùng trong lambda
-        String finalName = msg.getFileName() != null ? msg.getFileName() : "Tai_lieu";
+        // Biến final để dùng trong lambda
+        String finalName = fName;
 
         downloadBtn.setOnAction(event -> {
             FileChooser fileChooser = new FileChooser();
             fileChooser.setInitialFileName(finalName);
             File file = fileChooser.showSaveDialog(downloadBtn.getScene().getWindow());
             if (file != null) {
-                try { Files.write(file.toPath(), msg.getFileData()); } catch (Exception e) { e.printStackTrace(); }
+                // Tải file trong luồng riêng để không đơ UI
+                new Thread(() -> {
+                    try {
+                        byte[] data = msg.getFileData();
+                        // Nếu data null (lazy load chưa tải xong hoặc lịch sử), phải tải lại từ server
+                        if (data == null && msg.getAttachmentUrl() != null) {
+                            data = RmiClient.getMessageService().downloadFile(msg.getAttachmentUrl());
+                        }
+
+                        if (data != null) {
+                            Files.write(file.toPath(), data);
+                            Platform.runLater(() -> {
+                                // Có thể hiện thông báo tải xong tại đây nếu muốn
+                            });
+                        }
+                    } catch (Exception e) { e.printStackTrace(); }
+                }).start();
             }
         });
         return downloadBtn;
     }
-
     private static void handleLazyLoading(VBox msgContainer, ScrollPane msgScrollPane, MessageDTO msg, boolean isMe) {
         Label loadingLabel = new Label("⟳ Đang tải...");
         loadingLabel.setStyle("-fx-text-fill: gray; -fx-font-size: 11px;");
