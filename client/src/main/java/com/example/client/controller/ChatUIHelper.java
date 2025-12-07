@@ -70,7 +70,6 @@ public class ChatUIHelper {
             contentNode = createFileNode(msgContainer, msg, isMe);
         }
         else {
-            // Fallback cho các loại khác hoặc lỗi
             Label lbl = new Label(msg.getContent() != null ? msg.getContent() : "Tin nhắn không xác định");
             lbl.getStyleClass().add(isMe ? "text-me" : "text-other");
             contentNode = lbl;
@@ -80,32 +79,52 @@ public class ChatUIHelper {
         VBox bubble = new VBox(contentNode);
         bubble.getStyleClass().add(isMe ? "bubble-me" : "bubble-other");
 
-        // --- XỬ LÝ MENU CHUỘT PHẢI (Context Menu) ---
-        // Chỉ hiện menu nếu là tin nhắn của mình, chưa bị thu hồi và controller đã được set
+        // --- [THAY ĐỔI LỚN TẠI ĐÂY]: TẠO NÚT 3 CHẤM ---
+
+        // Tạo một HBox để chứa [Nút 3 chấm] và [Bong bóng chat]
+        HBox contentRow = new HBox(5); // Khoảng cách 5px
+        contentRow.setAlignment(isMe ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
+
+        // Chỉ hiện nút 3 chấm nếu là tin nhắn CỦA MÌNH và CHƯA BỊ THU HỒI
         if (isMe && msg.getType() != MessageDTO.MessageType.RECALL && mainController != null) {
+
+            // 1. Tạo nút 3 chấm
+            Button optionsBtn = new Button("⋮");
+            optionsBtn.getStyleClass().add("btn-msg-options"); // Class CSS vừa thêm
+
+            // 2. Tạo Menu (giống logic cũ)
             ContextMenu contextMenu = new ContextMenu();
 
-            // Menu: Chỉnh sửa (Chỉ áp dụng cho tin nhắn văn bản)
+            // Menu: Chỉnh sửa (Chỉ cho tin nhắn văn bản)
             if (msg.getType() == MessageDTO.MessageType.TEXT) {
                 MenuItem editItem = new MenuItem("✏ Chỉnh sửa");
                 editItem.setOnAction(e -> mainController.handleEditAction(msg));
                 contextMenu.getItems().add(editItem);
             }
 
-            // Menu: Thu hồi (Áp dụng cho mọi loại tin nhắn)
+            // Menu: Thu hồi
             MenuItem recallItem = new MenuItem("🚫 Thu hồi");
             recallItem.setOnAction(e -> mainController.handleRecallAction(msg));
             contextMenu.getItems().add(recallItem);
 
-            // Gắn sự kiện click chuột phải
-            bubble.setOnContextMenuRequested(e ->
-                    contextMenu.show(bubble, e.getScreenX(), e.getScreenY()));
+            // 3. Sự kiện bấm nút 3 chấm -> Hiện menu
+            optionsBtn.setOnAction(e -> {
+                contextMenu.show(optionsBtn, javafx.geometry.Side.BOTTOM, 0, 0);
+            });
+
+            // 4. Thêm vào row: [Nút 3 chấm] [Bong bóng]
+            // Vì alignment là CENTER_RIGHT, thứ tự addAll(optionsBtn, bubble) sẽ hiển thị là:
+            // [Nút 3 chấm] [Bong bóng] | (Lề phải)
+            contentRow.getChildren().addAll(optionsBtn, bubble);
+        } else {
+            // Tin nhắn người khác hoặc đã thu hồi -> Chỉ hiện bong bóng
+            contentRow.getChildren().add(bubble);
         }
 
-        // Đóng gói vào layout hàng ngang (HBox) để căn trái/phải
+        // Đóng gói vào layout hàng ngang tổng thể (Row chính của listview)
         VBox messageBlock = new VBox(3);
         messageBlock.setAlignment(isMe ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
-        messageBlock.getChildren().add(bubble);
+        messageBlock.getChildren().add(contentRow); // Add contentRow thay vì bubble trực tiếp
 
         // Hiển thị thời gian
         if (msg.getCreatedAt() != null) {
@@ -119,7 +138,7 @@ public class ChatUIHelper {
         row.setPadding(new Insets(2, 10, 2, 10));
         row.getChildren().add(messageBlock);
 
-        // Thêm vào giao diện (trên luồng JavaFX)
+        // Thêm vào giao diện
         Platform.runLater(() -> {
             msgContainer.getChildren().add(row);
             msgContainer.layout();
@@ -127,28 +146,33 @@ public class ChatUIHelper {
             msgScrollPane.setVvalue(1.0);
         });
 
-        return bubble; // Trả về để lưu vào Map quản lý
+        return bubble; // Vẫn trả về bubble để MainController quản lý việc update nội dung sau này
     }
 
-    // 3. Hàm cập nhật giao diện khi có sự kiện Edit/Recall
     public static void updateBubbleContent(VBox bubble, String newContent, boolean isRecall) {
-        bubble.getChildren().clear();
-        Label lbl = new Label(newContent);
+        Platform.runLater(() -> {
+            bubble.getChildren().clear();
+            Label lbl = new Label(newContent);
 
-        if (isRecall) {
-            // Style cho tin nhắn thu hồi
-            lbl.setStyle("-fx-font-style: italic; -fx-text-fill: #888888;");
-            bubble.getStyleClass().removeAll("bubble-me", "bubble-other");
-            bubble.setStyle("-fx-background-color: #f0f0f0; -fx-background-radius: 18px; -fx-padding: 10 15;");
-            // Xóa menu chuột phải
-            bubble.setOnContextMenuRequested(null);
-        } else {
-            // Style cho tin nhắn chỉnh sửa (giữ nguyên style cũ của text)
-            // Kiểm tra xem bubble gốc là của ai để set class text tương ứng
-            boolean isMe = bubble.getStyleClass().contains("bubble-me");
-            lbl.getStyleClass().add(isMe ? "text-me" : "text-other");
-        }
-        bubble.getChildren().add(lbl);
+            if (isRecall) {
+                // Style cho tin nhắn thu hồi
+                lbl.setStyle("-fx-font-style: italic; -fx-text-fill: #888888;");
+                bubble.getStyleClass().removeAll("bubble-me", "bubble-other");
+                bubble.setStyle("-fx-background-color: #f0f0f0; -fx-background-radius: 18px; -fx-padding: 10 15;");
+
+                // [MỚI] Xóa nút 3 chấm nếu có
+                if (bubble.getParent() instanceof HBox) {
+                    HBox parentRow = (HBox) bubble.getParent();
+                    // Tìm nút button trong row cha và xóa nó đi
+                    parentRow.getChildren().removeIf(node -> node instanceof Button && node.getStyleClass().contains("btn-msg-options"));
+                }
+            } else {
+                // Style cho tin nhắn chỉnh sửa
+                boolean isMe = bubble.getStyleClass().contains("bubble-me");
+                lbl.getStyleClass().add(isMe ? "text-me" : "text-other");
+            }
+            bubble.getChildren().add(lbl);
+        });
     }
 
     // 4. Hàm xử lý Lazy Loading (Cũng trả về VBox để quản lý)

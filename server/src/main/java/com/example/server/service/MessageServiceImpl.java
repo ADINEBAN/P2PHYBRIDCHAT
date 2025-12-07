@@ -87,6 +87,9 @@ public class MessageServiceImpl extends UnicastRemoteObject implements MessageSe
                 msg.setId(rs.getLong("id"));
                 msg.setSenderId(rs.getLong("sender_id"));
                 msg.setSenderName(rs.getString("display_name"));
+                // --- [THÊM DÒNG NÀY] ---
+                msg.setUuid(rs.getString("uuid")); // QUAN TRỌNG: Phải lấy UUID từ DB
+                // -----------------------
 
                 // [SỬA LỖI NPE TẠI ĐÂY] Kiểm tra null khi lấy content
                 String content = rs.getString("content");

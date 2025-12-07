@@ -431,6 +431,7 @@ public class MainController {
         UserDTO targetCache = currentChatUser;
         boolean isGroup = "GROUP".equals(targetCache.getUsername());
 
+        // 1. Gửi P2P cho đối phương (hoặc nhóm)
         if (isGroup) {
             try {
                 List<Long> memberIds = RmiClient.getGroupService().getGroupMemberIds(activeConversationId);
@@ -448,9 +449,29 @@ public class MainController {
             }
         }
 
-        if (msg.getType() != MessageDTO.MessageType.CALL_REQ && msg.getType() != MessageDTO.MessageType.CALL_ACCEPT &&
-                msg.getType() != MessageDTO.MessageType.CALL_DENY && msg.getType() != MessageDTO.MessageType.CALL_END) {
-            ChatUIHelper.addMessageBubble(msgContainer, msgScrollPane, msg, true);
+        // 2. Cập nhật giao diện (CHỈ KHI LÀ TIN NHẮN MỚI)
+        if (msg.getType() != MessageDTO.MessageType.RECALL &&
+                msg.getType() != MessageDTO.MessageType.EDIT &&
+                msg.getType() != MessageDTO.MessageType.CALL_REQ &&
+                msg.getType() != MessageDTO.MessageType.CALL_ACCEPT &&
+                msg.getType() != MessageDTO.MessageType.CALL_DENY &&
+                msg.getType() != MessageDTO.MessageType.CALL_END) {
+
+            // [SỬA LỖI 2 TIN NHẮN] Chỉ gọi 1 lần duy nhất và gán vào biến bubble
+            VBox bubble = ChatUIHelper.addMessageBubble(msgContainer, msgScrollPane, msg, true);
+
+            if (bubble != null && msg.getUuid() != null) {
+                messageUiMap.put(msg.getUuid(), bubble);
+            }
+        }
+
+        // [SỬA LỖI REALTIME] Đưa hàm này lên trước lệnh return
+        // Để dù là Thu hồi hay Sửa thì đoạn chat vẫn nhảy lên đầu danh sách
+        moveUserToTop(msg);
+
+        // 3. Backup lên Server (CHỈ KHI LÀ TIN NHẮN MỚI)
+        if (msg.getType() == MessageDTO.MessageType.RECALL || msg.getType() == MessageDTO.MessageType.EDIT) {
+            return; // Dừng tại đây, không lưu thêm bản ghi mới (vì đã update DB ở chỗ khác)
         }
 
         new Thread(() -> {
@@ -459,18 +480,15 @@ public class MainController {
                 backupMsg.setConversationId(msg.getConversationId());
                 backupMsg.setSenderId(msg.getSenderId());
                 backupMsg.setCreatedAt(msg.getCreatedAt());
-
-                // Lưu nội dung để định danh loại tin nhắn
                 backupMsg.setContent(msg.getContent());
                 backupMsg.setType(msg.getType());
+                backupMsg.setUuid(msg.getUuid());
 
                 if (msg.getFileData() != null && msg.getType() != MessageDTO.MessageType.TEXT) {
                     String fName = msg.getFileName() != null ? msg.getFileName() : "file_" + System.currentTimeMillis();
                     String serverPath = RmiClient.getMessageService().uploadFile(msg.getFileData(), fName);
                     backupMsg.setAttachmentUrl(serverPath);
                     backupMsg.setFileData(null);
-                } else {
-                    backupMsg.setContent(msg.getContent());
                 }
 
                 RmiClient.getMessageService().saveMessage(backupMsg);
@@ -480,10 +498,7 @@ public class MainController {
                 System.err.println(">> Client: Lỗi Backup Server: " + e.getMessage());
             }
         }).start();
-
-        moveUserToTop(msg);
     }
-
     @FXML public void handleVoiceCall() {
         if (currentChatUser == null) return;
         if ("GROUP".equals(currentChatUser.getUsername())) {
@@ -620,17 +635,17 @@ public class MainController {
     }
 
     public void handleRecallAction(MessageDTO targetMsg) {
-        // 1. [QUAN TRỌNG] Gửi tín hiệu P2P báo thu hồi
+        // 1. Gửi tín hiệu P2P báo thu hồi
         MessageDTO recallMsg = new MessageDTO();
-        recallMsg.setType(MessageDTO.MessageType.RECALL); // Loại tin RECALL
-        recallMsg.setUuid(targetMsg.getUuid());         // Bắt buộc phải trùng UUID
+        recallMsg.setType(MessageDTO.MessageType.RECALL);
+        recallMsg.setUuid(targetMsg.getUuid());
         recallMsg.setConversationId(activeConversationId);
         recallMsg.setSenderId(SessionStore.currentUser.getId());
 
-        // Gửi đi ngay!
         sendP2PMessage(recallMsg);
 
-        // 2. Cập nhật giao diện của mình
+        // 2. Cập nhật giao diện của chính mình
+        // [QUAN TRỌNG] Nhờ Bước 1 đã put vào Map, nên giờ dòng này mới tìm thấy để sửa
         if (messageUiMap.containsKey(targetMsg.getUuid())) {
             ChatUIHelper.updateBubbleContent(messageUiMap.get(targetMsg.getUuid()), "🚫 Tin nhắn đã thu hồi", true);
         }

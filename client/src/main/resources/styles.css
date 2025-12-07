@@ -260,3 +260,21 @@
 .btn-outline-blue { -fx-background-color: transparent; -fx-border-color: #667eea; -fx-border-width: 2px; -fx-border-radius: 12px; -fx-text-fill: #667eea; -fx-font-weight: bold; -fx-cursor: hand; }
 .btn-outline-pink { -fx-background-color: transparent; -fx-border-color: #f5576c; -fx-border-width: 2px; -fx-border-radius: 12px; -fx-text-fill: #f5576c; -fx-font-weight: bold; -fx-cursor: hand; }
 .decoration-circle { -fx-fill: rgba(255, 255, 255, 0.1); }
+/* ... Các code cũ giữ nguyên ... */
+
+/* 10. NÚT TÙY CHỌN TIN NHẮN (3 CHẤM) */
+.btn-msg-options {
+    -fx-background-color: transparent;
+    -fx-text-fill: rgba(0,0,0,0.3); /* Màu xám nhạt */
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+    -fx-cursor: hand;
+    -fx-padding: 0 5 0 5;
+    -fx-alignment: CENTER;
+}
+
+.btn-msg-options:hover {
+    -fx-text-fill: #667eea; /* Đổi màu khi di chuột vào */
+    -fx-background-color: rgba(0,0,0,0.05);
+    -fx-background-radius: 50%;
+}
