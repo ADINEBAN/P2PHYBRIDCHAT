@@ -20,10 +20,18 @@ public class NavigationHandler {
     public void handleOpenProfile() {
         try {
             FXMLLoader loader = new FXMLLoader(getClass().getResource("/view/profile-view.fxml"));
+            Parent root = loader.load();
+
+            // [SỬA ĐOẠN NÀY] Lấy controller và truyền MainController vào
+            ProfileController profileCtrl = loader.getController();
+            profileCtrl.setMainController(mc); // 'mc' là biến MainController đã có sẵn trong class này
+
             Stage stage = new Stage();
-            stage.setScene(new Scene(loader.load()));
+            stage.setScene(new Scene(root));
             stage.show();
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     public void handleToggleInfo() {

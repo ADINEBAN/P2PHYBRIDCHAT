@@ -20,6 +20,11 @@ public class ProfileController {
 
     private byte[] newAvatarData = null;
     private String newAvatarExt = null;
+    private MainController mainController;
+    // 2. [THÊM] Hàm Setter để nhận MainController từ bên ngoài
+    public void setMainController(MainController mainController) {
+        this.mainController = mainController;
+    }
 
     @FXML
     public void initialize() {
@@ -62,15 +67,40 @@ public class ProfileController {
 
         new Thread(() -> {
             try {
+                // 1. Gọi Server cập nhật
                 boolean ok = RmiClient.getAuthService().updateProfile(
                         SessionStore.currentUser.getId(), name, status, newAvatarData, newAvatarExt
                 );
+
                 Platform.runLater(() -> {
                     if (ok) {
-                        SessionStore.currentUser.setDisplayName(name);
-                        SessionStore.currentUser.setStatusMsg(status);
+                        // --- [SỬA ĐOẠN NÀY] ---
 
-                        showAlert("Thành công", "Đã cập nhật thông tin!");
+                        // 2. Cập nhật thành công, nhưng ta chưa biết URL ảnh mới là gì.
+                        // Hãy gọi Server lấy thông tin mới nhất của chính mình về.
+                        new Thread(() -> {
+                            try {
+                                UserDTO myNewInfo = RmiClient.getDirectoryService().getUserInfo(SessionStore.currentUser.getId());
+
+                                Platform.runLater(() -> {
+                                    if (myNewInfo != null) {
+                                        // 3. Cập nhật toàn bộ thông tin mới (bao gồm cả Avatar URL mới) vào SessionStore
+                                        SessionStore.currentUser = myNewInfo;
+
+                                        // 4. Lúc này mới gọi MainController vẽ lại -> Nó sẽ lấy được ảnh mới
+                                        if (mainController != null) {
+                                            mainController.refreshProfileUI();
+                                        }
+
+                                        showAlert("Thành công", "Đã cập nhật thông tin!");
+                                    }
+                                });
+                            } catch (Exception ex) {
+                                ex.printStackTrace();
+                            }
+                        }).start();
+                        // ----------------------
+
                     } else {
                         showAlert("Lỗi", "Không thể cập nhật.");
                     }
@@ -78,7 +108,6 @@ public class ProfileController {
             } catch (Exception e) { e.printStackTrace(); }
         }).start();
     }
-
     @FXML
     public void handleChangePass() {
         String oldP = oldPassField.getText();
