@@ -338,3 +338,8 @@
 .btn-save:hover {
     -fx-effect: dropshadow(three-pass-box, rgba(102, 126, 234, 0.4), 10, 0, 0, 3);
 }
+.emoji-font {
+    -fx-font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji";
+    -fx-text-fill: null; /* Để màu gốc của emoji hiển thị */
+    -fx-font-size: 20px;
+}

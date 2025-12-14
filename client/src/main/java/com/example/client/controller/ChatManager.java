@@ -8,10 +8,14 @@ import com.example.common.dto.UserDTO;
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.TextInputDialog;
+import javafx.scene.image.Image;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.ImagePattern;
+import javafx.scene.shape.Circle;
 import javafx.stage.FileChooser;
 import javafx.scene.input.MouseEvent;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.nio.file.Files;
 import java.time.LocalDateTime;
@@ -45,6 +49,7 @@ public class ChatManager {
 
         // 2. Xử lý tin nhắn mới
         if (mc.activeConversationId != -1 && msg.getConversationId() == mc.activeConversationId) {
+            // [QUAN TRỌNG] ChatUIHelper sẽ lo việc hiển thị Avatar bên cạnh tin nhắn
             VBox bubble = ChatUIHelper.addMessageBubble(mc.msgContainer, mc.msgScrollPane, msg, false);
             if (msg.getUuid() != null && bubble != null) {
                 mc.messageUiMap.put(msg.getUuid(), bubble);
@@ -62,7 +67,6 @@ public class ChatManager {
     }
 
     public void sendP2PMessage(MessageDTO msg) {
-        // Logic gửi tin nhắn (Bê nguyên từ MainController cũ sang)
         UserDTO targetCache = mc.currentChatUser;
         boolean isGroup = "GROUP".equals(targetCache.getUsername());
 
@@ -143,18 +147,45 @@ public class ChatManager {
         mc.inputField.clear();
     }
 
+    // --- [ĐÃ SỬA] CẬP NHẬT HEADER CÓ AVATAR ---
     public void switchChat(UserDTO friendOrGroup) {
         mc.currentChatUser = friendOrGroup;
         mc.welcomeArea.setVisible(false);
         mc.chatArea.setVisible(true);
-        mc.currentChatTitle.setText(friendOrGroup.getDisplayName());
-        mc.msgContainer.getChildren().clear();
 
+        // 1. Set Tên
+        mc.currentChatTitle.setText(friendOrGroup.getDisplayName());
+
+        // 2. Set Avatar (Header)
+        // Reset trước để tránh hiện avatar cũ khi đang load
+        mc.currentChatTitle.setGraphic(null);
+
+        if (friendOrGroup.getAvatarUrl() != null && !friendOrGroup.getAvatarUrl().isEmpty()) {
+            new Thread(() -> {
+                try {
+                    // Tải ảnh từ Server
+                    byte[] data = RmiClient.getMessageService().downloadFile(friendOrGroup.getAvatarUrl());
+                    if (data != null) {
+                        Image img = new Image(new ByteArrayInputStream(data));
+                        Platform.runLater(() -> {
+                            // Tạo hình tròn cho Header
+                            Circle avatarCircle = new Circle(18);
+                            avatarCircle.setFill(new ImagePattern(img));
+
+                            // Gắn vào Label tiêu đề
+                            mc.currentChatTitle.setGraphic(avatarCircle);
+                            mc.currentChatTitle.setGraphicTextGap(10); // Khoảng cách
+                        });
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }).start();
+        }
+
+        mc.msgContainer.getChildren().clear();
         friendOrGroup.setUnreadCount(0);
         mc.conversationList.refresh();
-
-        // Close sidebar if logic requires (Optional)
-        // if (mc.isInfoSidebarOpen) mc.openInfoSidebar();
 
         new Thread(() -> {
             try {
@@ -179,6 +210,8 @@ public class ChatManager {
 
                 for (MessageDTO msg : history) {
                     boolean isMe = msg.getSenderId() == SessionStore.currentUser.getId();
+                    // Avatar bên cạnh tin nhắn sẽ được ChatUIHelper xử lý
+                    // Lưu ý: Cần đảm bảo ChatUIHelper đã được cập nhật logic hiển thị avatar
                     VBox bubble = ChatUIHelper.addMessageBubble(mc.msgContainer, mc.msgScrollPane, msg, isMe);
                     if (msg.getUuid() != null && bubble != null) {
                         mc.messageUiMap.put(msg.getUuid(), bubble);
@@ -301,5 +334,8 @@ public class ChatManager {
                 RmiClient.getMessageService().updateMessage(targetMsg.getUuid(), null, MessageDTO.MessageType.RECALL);
             } catch(Exception e) { e.printStackTrace(); }
         }).start();
+    }
+
+    public void sendReaction(MessageDTO msg, String emoji) {
     }
 }

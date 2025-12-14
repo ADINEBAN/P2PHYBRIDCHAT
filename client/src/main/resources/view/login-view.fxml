@@ -25,7 +25,7 @@
 
         <VBox alignment="CENTER" spacing="10">
             <StackPane>
-                <Rectangle height="80" styleClass="logo-container-blue" width="80" />
+                <Rectangle height="60" styleClass="logo-container-blue" width="60" />
                 <Label style="-fx-font-size: 42px;" text="💬" />
             </StackPane>
 
@@ -64,7 +64,7 @@
             <Button maxWidth="Infinity" onAction="#handleRegister" styleClass="btn-outline-blue" text="Tạo tài khoản mới" />
         </VBox>
 
-        <Label style="-fx-text-fill: #999; -fx-font-size: 11px;" text="© 2024 Hybrid Messenger. All rights reserved.">
+        <Label style="-fx-text-fill: #999; -fx-font-size: 11px;" text="© 2025 Hybrid Messenger. All rights reserved.">
             <VBox.margin><Insets top="10" /></VBox.margin>
         </Label>
     </VBox>

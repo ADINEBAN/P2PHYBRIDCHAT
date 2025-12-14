@@ -17,4 +17,5 @@ public interface FriendService extends Remote {
 
     // [MỚI] Chấp nhận lời mời
     boolean acceptFriendRequest(long userId, long senderId) throws RemoteException;
+    boolean updateFriendNickname(long userId, long friendId, String nickname) throws RemoteException;
 }

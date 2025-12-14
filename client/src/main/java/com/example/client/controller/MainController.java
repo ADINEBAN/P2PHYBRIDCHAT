@@ -4,6 +4,7 @@ import com.example.client.net.P2PClient;
 import com.example.client.net.RealTimeHandler;
 import com.example.client.net.RmiClient;
 import com.example.client.store.SessionStore;
+import com.example.client.util.EmojiHandler;
 import com.example.common.dto.MessageDTO;
 import com.example.common.dto.UserDTO;
 import javafx.application.Platform;
@@ -13,6 +14,7 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.StackPane; // [MỚI] Import StackPane
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
 
@@ -22,16 +24,24 @@ import java.util.Map;
 
 public class MainController {
 
-    // --- FXML FIELDS (Để public hoặc có getter để các Manager truy cập) ---
+    // --- FXML FIELDS ---
     @FXML public BorderPane mainBorderPane;
     @FXML public Label myDisplayName;
     @FXML public ImageView myAvatarView;
     @FXML public ListView<UserDTO> conversationList;
     @FXML public VBox chatArea, welcomeArea, msgContainer;
+
     @FXML public Label currentChatTitle;
     @FXML public TextField inputField;
     @FXML public ScrollPane msgScrollPane;
     @FXML public Button micBtn;
+    @FXML public Button emojiBtn;
+    @FXML public TextField searchMsgField;
+    // [QUAN TRỌNG] Liên kết với ChatInfoController (bên phải)
+    @FXML private ChatInfoController chatInfoController;
+
+    // [MỚI] Container chứa thanh bên phải (để Bật/Tắt)
+    @FXML private StackPane infoSidebarContainer;
 
     // --- DATA FIELDS ---
     public P2PClient p2pClient;
@@ -59,7 +69,12 @@ public class MainController {
         conversationList.setCellFactory(param -> new FriendListCell());
         ChatUIHelper.setMainController(this);
 
-        // 3. Load thông tin User
+        // [MỚI] Mặc định ẩn thanh thông tin bên phải đi (Để giao diện chỉ có 2 phần)
+        if (mainBorderPane != null) {
+            mainBorderPane.setRight(null);
+        }
+
+        // 3. Load thông tin User (Me)
         UserDTO me = SessionStore.currentUser;
         if (me != null) {
             myDisplayName.setText(me.getDisplayName());
@@ -69,12 +84,34 @@ public class MainController {
             registerRealTimeUpdates();
         }
 
-        // 4. Sự kiện click vào List
+        // 4. Xử lý sự kiện click vào List Conversation
         conversationList.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (!isUpdatingList && newVal != null) {
+                this.currentChatUser = newVal; // Lưu người đang chat
+
+                // A. Load nội dung chat (Qua ChatManager)
                 chatManager.switchChat(newVal);
+
+                // B. Cập nhật thanh thông tin bên phải (nếu đang mở)
+                if (mainBorderPane.getRight() != null && chatInfoController != null) {
+                    chatInfoController.setUserInfo(newVal);
+                }
             }
         });
+
+        // 5. Xử lý sự kiện nút Emoji
+        if (emojiBtn != null) {
+            emojiBtn.setOnAction(e -> {
+                EmojiHandler.showEmojiPopup(emojiBtn, (emoji) -> {
+                    inputField.appendText(emoji);
+                });
+            });
+        }
+        if (searchMsgField != null) {
+            searchMsgField.textProperty().addListener((obs, oldVal, newVal) -> {
+                filterMessages(newVal);
+            });
+        }
     }
 
     // --- P2P & NETWORK SETUP ---
@@ -90,10 +127,9 @@ public class MainController {
         } catch (Exception e) { e.printStackTrace(); }
     }
 
-    // --- HÀM NHẬN TIN NHẮN (DISPATCHER) ---
+    // --- HÀM NHẬN TIN NHẮN ---
     public void onMessageReceived(MessageDTO msg) {
         Platform.runLater(() -> {
-            // Điều hướng xử lý dựa trên loại tin nhắn
             if (msg.getType() == MessageDTO.MessageType.CALL_REQ ||
                     msg.getType() == MessageDTO.MessageType.CALL_ACCEPT ||
                     msg.getType() == MessageDTO.MessageType.CALL_DENY ||
@@ -102,43 +138,28 @@ public class MainController {
                 callHandler.handleCallSignal(msg);
 
             } else {
-                // 1. Xử lý hiển thị tin nhắn lên giao diện (Text, Image, Notification...)
                 chatManager.handleIncomingMessage(msg);
 
-                // --- [PHẦN MỚI CHÈN VÀO] XỬ LÝ SỰ KIỆN NHÓM REALTIME ---
                 if (msg.getContent() != null) {
-
-                    // A. Nếu nhận được thông báo đổi tên hoặc đổi ảnh nhóm
                     if (msg.getContent().contains("đã đổi tên nhóm") || msg.getContent().contains("đã thay đổi ảnh")) {
-                        // Chạy luồng riêng để gọi Server (tránh đơ giao diện)
                         new Thread(() -> {
                             try {
-                                // Gọi Server lấy lại thông tin nhóm mới nhất
                                 UserDTO updatedGroup = RmiClient.getDirectoryService().getUserInfo(msg.getConversationId());
-
-                                // Cập nhật lại Sidebar trên luồng giao diện
                                 if (updatedGroup != null) {
                                     Platform.runLater(() -> updateFriendInList(updatedGroup));
                                 }
-                            } catch (Exception e) {
-                                e.printStackTrace();
-                            }
+                            } catch (Exception e) { e.printStackTrace(); }
                         }).start();
                     }
-
-                    // B. Nếu nhận được thông báo giải tán nhóm
                     if (msg.getContent().contains("đã giải tán nhóm")) {
-                        // Tự động xóa nhóm khỏi danh sách và đóng chat
                         handleGroupLeft(msg.getConversationId());
                     }
                 }
-                // -------------------------------------------------------
             }
         });
     }
 
-    // --- DELEGATE METHODS (Chuyển tiếp sự kiện từ FXML sang Manager) ---
-
+    // --- DELEGATE METHODS ---
     @FXML public void handleSend() { chatManager.handleSend(); }
     @FXML public void handleSendFile() { chatManager.handleSendFile(); }
     @FXML public void startRecording(MouseEvent event) { chatManager.startRecording(event); }
@@ -150,11 +171,26 @@ public class MainController {
     @FXML public void handleAddFriend() { navigationHandler.handleAddFriend(); }
     @FXML public void handleShowRequests() { navigationHandler.handleShowRequests(); }
     @FXML public void handleOpenProfile() { navigationHandler.handleOpenProfile(); }
-    @FXML public void handleToggleInfo() { navigationHandler.handleToggleInfo(); }
 
-    // --- HELPER METHODS CHO CÁC MANAGER GỌI LẠI ---
+    // [MỚI] Xử lý Bật/Tắt thanh thông tin (Sidebar phải)
+    @FXML
+    public void handleToggleInfo() {
+        // Kiểm tra xem cột phải đang hiện hay ẩn
+        if (mainBorderPane.getRight() == null) {
+            // Nếu đang ẩn -> Hiện nó ra
+            mainBorderPane.setRight(infoSidebarContainer);
 
-    // Các hàm này được Manager gọi để thao tác chéo
+            // Cập nhật thông tin ngay lập tức
+            if (currentChatUser != null && chatInfoController != null) {
+                chatInfoController.setUserInfo(currentChatUser);
+            }
+        } else {
+            // Nếu đang hiện -> Ẩn nó đi
+            mainBorderPane.setRight(null);
+        }
+    }
+
+    // --- HELPER METHODS ---
     public void handleEditAction(MessageDTO msg) { chatManager.handleEditAction(msg); }
     public void handleRecallAction(MessageDTO msg) { chatManager.handleRecallAction(msg); }
 
@@ -175,38 +211,79 @@ public class MainController {
             } catch (Exception e) {}
         }).start();
     }
-    public void handleGroupLeft(long groupId) {
-        // 1. Xóa khỏi danh sách bên trái
-        getContactManager().removeConversation(groupId);
 
-        // 2. Nếu đang mở đúng nhóm đó thì đóng lại, hiện màn hình chào mừng
+    public void handleGroupLeft(long groupId) {
+        getContactManager().removeConversation(groupId);
         if (activeConversationId == groupId) {
             welcomeArea.setVisible(true);
             chatArea.setVisible(false);
             currentChatUser = null;
             activeConversationId = -1;
-
-            // Đóng sidebar thông tin
             mainBorderPane.setRight(null);
         }
-
-        // 3. Thông báo
-        Alert a = new Alert(Alert.AlertType.INFORMATION, "Bạn đã rời nhóm thành công.");
+        Alert a = new Alert(Alert.AlertType.INFORMATION, "Nhóm đã giải tán hoặc bạn đã rời nhóm.");
         a.show();
     }
+
     public void refreshProfileUI() {
         myDisplayName.setText(SessionStore.currentUser.getDisplayName());
         loadMyAvatar(SessionStore.currentUser.getAvatarUrl());
     }
 
-    // Getters cho Manager
+    // --- GETTERS ---
     public ContactManager getContactManager() { return contactManager; }
     public ChatManager getChatManager() { return chatManager; }
     public CallHandler getCallHandler() { return callHandler; }
     public NavigationHandler getNavigationHandler() { return navigationHandler; }
 
-    // Hàm updateFriendInList được gọi từ RealTimeHandler
     public void updateFriendInList(UserDTO friend) { contactManager.updateFriendInList(friend); }
     public void addFriendToListDirectly(UserDTO friend) { contactManager.addFriendToListDirectly(friend); }
     public void handleEndCallSignal() { callHandler.handleEndCallSignal(); }
+    // [MỚI] Hàm lọc tin nhắn
+    private void filterMessages(String keyword) {
+        if (msgContainer == null) return;
+        String search = (keyword == null) ? "" : keyword.toLowerCase().trim();
+
+        for (javafx.scene.Node node : msgContainer.getChildren()) {
+            if (node instanceof javafx.scene.layout.HBox) {
+                javafx.scene.layout.HBox row = (javafx.scene.layout.HBox) node;
+
+                // Lấy nội dung tin nhắn đã lưu ở Bước 1
+                Object userData = row.getUserData();
+
+                // Mặc định hiện tất cả
+                boolean isVisible = true;
+
+                // Nếu đang tìm kiếm và dòng này có chứa nội dung
+                if (!search.isEmpty() && userData instanceof String) {
+                    String content = (String) userData;
+                    if (!content.contains(search)) {
+                        isVisible = false; // Ẩn nếu không khớp từ khóa
+                    }
+                } else if (!search.isEmpty() && userData == null) {
+                    // Ẩn các dòng không có nội dung text (ví dụ thông báo ngày tháng) khi đang tìm kiếm
+                    // Hoặc giữ lại tùy bạn. Ở đây mình ẩn cho gọn.
+                    isVisible = false;
+                }
+
+                row.setVisible(isVisible);
+                row.setManaged(isVisible); // Co lại nếu ẩn
+            }
+        }
+    }
+
+    // [MỚI] Hàm để ChatInfoController gọi sang: Bật/Tắt thanh tìm kiếm
+    public void toggleSearchMessage() {
+        if (searchMsgField == null) return;
+
+        boolean isShow = !searchMsgField.isVisible();
+        searchMsgField.setVisible(isShow);
+        searchMsgField.setManaged(isShow);
+
+        if (isShow) {
+            searchMsgField.requestFocus(); // Focus để gõ luôn
+        } else {
+            searchMsgField.clear(); // Xóa chữ và hiện lại tất cả tin nhắn khi tắt
+        }
+    }
 }

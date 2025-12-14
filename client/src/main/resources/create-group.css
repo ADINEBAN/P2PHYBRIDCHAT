@@ -1,0 +1,123 @@
+/* --- CẤU HÍNH CHUNG --- */
+.root {
+    /* Đổi màu nền thành màu tím nhạt như trong ảnh */
+    -fx-background-color: #e8eaf6;
+    -fx-font-family: "Segoe UI", sans-serif;
+}
+
+/* --- TIÊU ĐỀ --- */
+.header-label {
+    -fx-font-size: 22px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #6c5ce7;
+    -fx-effect: dropshadow(three-pass-box, rgba(108, 92, 231, 0.2), 5, 0, 0, 1);
+    -fx-padding: 0 0 5 0;
+}
+
+/* --- (Giữ nguyên các phần CSS khác bên dưới của bạn) --- */
+/* ... */
+/* --- VÙNG CHỌN AVATAR --- */
+.avatar-container {
+    -fx-cursor: hand;
+}
+.avatar-circle {
+    -fx-fill: #f8f9fa;
+    -fx-stroke: #dfe6e9;
+    -fx-stroke-width: 2px;
+    -fx-stroke-type: inside;
+}
+.avatar-container:hover .avatar-circle {
+    -fx-stroke: #6c5ce7; /* Viền tím khi rê chuột vào */
+    -fx-fill: #f0f0ff;
+}
+
+/* --- Ô NHẬP TÊN NHÓM --- */
+.input-field {
+    -fx-background-color: #f1f2f6;
+    -fx-background-radius: 20; /* Bo tròn mạnh */
+    -fx-border-color: transparent;
+    -fx-border-radius: 20;
+    -fx-border-width: 1.5px;
+    -fx-padding: 12 15; /* Tăng padding cho thoáng */
+    -fx-font-size: 14px;
+    -fx-prompt-text-fill: #a4b0be;
+}
+.input-field:focused {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #6c5ce7; /* Viền tím khi nhập */
+    -fx-effect: dropshadow(three-pass-box, rgba(108, 92, 231, 0.2), 5, 0, 0, 2);
+}
+
+/* --- DANH SÁCH BẠN BÈ (ListView) --- */
+.list-view {
+    -fx-background-color: #ffffff;
+    -fx-background-radius: 15;
+    -fx-border-color: #f1f2f6;
+    -fx-border-radius: 15;
+    -fx-padding: 5;
+}
+.list-cell {
+    -fx-background-color: transparent;
+    -fx-padding: 10px;
+    -fx-font-size: 14px;
+    -fx-text-fill: #2d3436;
+    -fx-border-color: transparent transparent #f1f2f6 transparent;
+}
+.list-cell:filled:selected, .list-cell:filled:hover {
+    -fx-background-color: #f0f0ff; /* Nền tím nhạt khi chọn */
+    -fx-background-radius: 10;
+    -fx-text-fill: #6c5ce7;
+    -fx-font-weight: bold;
+}
+.list-cell:empty {
+    -fx-background-color: transparent;
+}
+
+/* --- THANH CUỘN (SCROLLBAR) --- */
+.list-view .scroll-bar:vertical {
+    -fx-background-color: transparent;
+    -fx-pref-width: 6px;
+}
+.list-view .scroll-bar:vertical .thumb {
+    -fx-background-color: #dfe6e9;
+    -fx-background-radius: 10px;
+}
+.list-view .scroll-bar:vertical .thumb:hover {
+    -fx-background-color: #b2bec3;
+}
+
+/* --- NÚT BẤM (BUTTONS) --- */
+.button {
+    -fx-font-family: "Segoe UI Semibold";
+    -fx-font-size: 13px;
+    -fx-background-radius: 25; /* Bo tròn kiểu viên thuốc */
+    -fx-cursor: hand;
+    -fx-padding: 9 25;
+}
+
+/* Nút Hủy (Màu xám nhẹ) */
+.btn-secondary {
+    -fx-background-color: #f1f2f6;
+    -fx-text-fill: #636e72;
+}
+.btn-secondary:hover {
+    -fx-background-color: #dfe6e9;
+    -fx-text-fill: #2d3436;
+}
+
+/* Nút Tạo Nhóm (Màu Tím Gradient nhẹ để nổi bật) */
+.btn-primary {
+    -fx-background-color: linear-gradient(to right, #6c5ce7, #a29bfe);
+    -fx-text-fill: white;
+    -fx-effect: dropshadow(three-pass-box, rgba(108, 92, 231, 0.4), 8, 0, 0, 2);
+}
+.btn-primary:hover {
+    -fx-background-color: linear-gradient(to right, #5f4dd0, #9389f9);
+    -fx-scale-x: 1.02;
+    -fx-scale-y: 1.02;
+}
+.btn-primary:pressed {
+    -fx-background-color: #5f4dd0;
+    -fx-effect: none;
+    -fx-translate-y: 1;
+}

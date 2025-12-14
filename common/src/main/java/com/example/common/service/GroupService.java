@@ -6,29 +6,34 @@ import java.rmi.RemoteException;
 import java.util.List;
 
 public interface GroupService extends Remote {
-    // [SỬA] Thêm tham số avatarUrl
+
+    // Tạo nhóm (Có avatar)
     long createGroup(String groupName, List<Long> memberIds, String avatarUrl) throws RemoteException;
-    // Lấy danh sách ID thành viên (để Client gửi P2P)
+
+    // Lấy danh sách ID thành viên
     List<Long> getGroupMemberIds(long conversationId) throws RemoteException;
 
-    // Lấy danh sách các nhóm mà user đang tham gia
+    // Lấy danh sách các nhóm của tôi
     List<UserDTO> getMyGroups(long userId) throws RemoteException;
 
-    // Rời nhóm (Tự mình rời đi)
+    // Rời nhóm
     boolean leaveGroup(long userId, long groupId) throws RemoteException;
 
-    // 1. Lấy danh sách thành viên đầy đủ
+    // Lấy danh sách thành viên đầy đủ (Bao gồm cả biệt danh)
     List<UserDTO> getGroupMembers(long groupId) throws RemoteException;
 
-    // 2. Thêm thành viên vào nhóm
+    // Thêm thành viên
     boolean addMemberToGroup(long groupId, long newMemberId) throws RemoteException;
 
-    // 3. Mời thành viên ra khỏi nhóm (Kick) - [ĐÃ SỬA DÒNG NÀY: THÊM requesterId]
+    // Mời thành viên ra khỏi nhóm
     boolean removeMemberFromGroup(long requesterId, long groupId, long targetId) throws RemoteException;
 
-    // [MỚI] Cập nhật thông tin nhóm (Tên, Avatar)
+    // Cập nhật thông tin nhóm (Tên, Ảnh)
     boolean updateGroupInfo(long requesterId, long groupId, String newName, String avatarUrl) throws RemoteException;
 
-    // [MỚI] Giải tán nhóm
+    // Giải tán nhóm
     boolean dissolveGroup(long requesterId, long groupId) throws RemoteException;
+
+    // [MỚI] Cập nhật biệt danh cho thành viên
+    boolean updateNickname(long groupId, long userId, String newNickname) throws RemoteException;
 }
