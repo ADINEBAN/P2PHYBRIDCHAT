@@ -37,9 +37,9 @@ public interface MessageService extends Remote {
 
     // Lấy danh sách tin nhắn đã ghim trong một cuộc trò chuyện
     List<MessageDTO> getPinnedMessages(long conversationId) throws RemoteException;
-    // [THÊM MỚI] Cập nhật màu nền
+    //đổi nền
+    void onThemeUpdate(long conversationId, String newColor) throws RemoteException;
     boolean updateConversationTheme(long conversationId, String colorCode) throws RemoteException;
-
-    // [THÊM MỚI] Lấy màu nền hiện tại
     String getConversationTheme(long conversationId) throws RemoteException;
+
 }

@@ -1,6 +1,7 @@
 package com.example.client.net;
 
 import com.example.client.controller.MainController;
+import com.example.common.dto.MessageDTO; // [QUAN TRỌNG] Đừng quên import này
 import com.example.common.dto.UserDTO;
 import com.example.common.service.ClientCallback;
 import javafx.application.Platform;
@@ -18,6 +19,14 @@ public class RealTimeHandler extends UnicastRemoteObject implements ClientCallba
         this.mainController = mainController;
     }
 
+    // --- [1. QUAN TRỌNG: HÀM NHẬN TIN NHẮN (BẠN ĐANG THIẾU CÁI NÀY)] ---
+    @Override
+    public void onMessageReceived(MessageDTO message) throws RemoteException {
+        // Chuyển tiếp tin nhắn sang MainController để hiển thị lên giao diện
+        Platform.runLater(() -> mainController.onMessageReceived(message));
+    }
+
+    // --- 2. CÁC HÀM XỬ LÝ BẠN BÈ & NHÓM ---
     @Override
     public void onFriendStatusChange(UserDTO friend) throws RemoteException {
         // Cập nhật trạng thái Online/Offline
@@ -52,11 +61,10 @@ public class RealTimeHandler extends UnicastRemoteObject implements ClientCallba
 
     @Override
     public void onAddedToGroup(UserDTO newGroup) throws RemoteException {
-        // [SỬA LỖI REALTIME NHÓM]
         // Khi được thêm vào nhóm, gọi hàm này để hiển thị nhóm lên Sidebar ngay lập tức
         Platform.runLater(() -> mainController.updateFriendInList(newGroup));
     }
-    // --- [THÊM MỚI] ---
+
     @Override
     public void onRemovedFromGroup(long groupId, String groupName) throws RemoteException {
         Platform.runLater(() -> {
@@ -68,21 +76,31 @@ public class RealTimeHandler extends UnicastRemoteObject implements ClientCallba
             alert.show();
 
             // 2. Gọi hàm xử lý giao diện bên MainController
-            // Hàm này sẽ xóa nhóm khỏi List và đóng khung chat nếu đang mở
             if (mainController != null) {
                 mainController.handleGroupLeft(groupId);
             }
         });
     }
-    // [MỚI] Xử lý khi có tin nhắn Ghim/Bỏ ghim
+
+    // --- 3. CÁC HÀM CẬP NHẬT GIAO DIỆN (GHIM & THEME) ---
+
     @Override
     public void onMessageUpdate(String msgUuid, String actionType) throws RemoteException {
         Platform.runLater(() -> {
             if (mainController != null) {
-                // Gọi hàm xử lý giao diện bên MainController
+                // Gọi hàm xử lý giao diện bên MainController (Ghim/Bỏ ghim)
                 mainController.handleRemoteMessageUpdate(msgUuid, actionType);
             }
         });
     }
 
+    @Override
+    public void onThemeUpdate(long conversationId, String newColor) throws RemoteException {
+        Platform.runLater(() -> {
+            if (mainController != null) {
+                // Gọi hàm đổi màu nền ngay lập tức
+                mainController.handleRemoteThemeUpdate(conversationId, newColor);
+            }
+        });
+    }
 }

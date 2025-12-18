@@ -1,24 +1,30 @@
 package com.example.common.service;
 
+import com.example.common.dto.MessageDTO;
 import com.example.common.dto.UserDTO;
 import java.rmi.Remote;
 import java.rmi.RemoteException;
 
 public interface ClientCallback extends Remote {
-    // Báo trạng thái Online/Offline (Cũ)
+    // 1. Nhận tin nhắn
+    void onMessageReceived(MessageDTO message) throws RemoteException;
+
+    // 2. Trạng thái bạn bè
     void onFriendStatusChange(UserDTO friend) throws RemoteException;
-
-    // [MỚI] Báo khi có người gửi lời mời kết bạn
     void onNewFriendRequest(UserDTO sender) throws RemoteException;
-
-    // [MỚI] Báo khi lời mời của mình được chấp nhận (để cập nhật list ngay)
     void onFriendRequestAccepted(UserDTO newFriend) throws RemoteException;
 
-    // [MỚI] Hàm báo khi được thêm vào nhóm
+    // 3. Nhóm (Group)
     void onAddedToGroup(UserDTO newGroup) throws RemoteException;
-    // --- [THÊM MỚI] ---
-    // Hàm này được Server gọi khi user bị người khác kick khỏi nhóm
+
+    // [THÊM] Hàm bị thiếu gây lỗi override
     void onRemovedFromGroup(long groupId, String groupName) throws RemoteException;
-    // [MỚI] Báo tin nhắn được cập nhật (Ghim/Bỏ ghim)
+
+    // 4. Cập nhật tin nhắn (Ghim/Bỏ ghim)
+    // [THÊM] Hàm bị thiếu gây lỗi override
     void onMessageUpdate(String msgUuid, String actionType) throws RemoteException;
+
+    // 5. Đổi màu nền (Theme)
+    // [THÊM] Hàm bị thiếu gây lỗi override
+    void onThemeUpdate(long conversationId, String newColor) throws RemoteException;
 }

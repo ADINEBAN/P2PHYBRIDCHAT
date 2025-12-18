@@ -337,17 +337,22 @@ public class MessageServiceImpl extends UnicastRemoteObject implements MessageSe
     }
     @Override
     public boolean updateConversationTheme(long conversationId, String colorCode) throws RemoteException {
-        // Cập nhật màu vào bảng conversations
         String sql = "UPDATE conversations SET theme_color = ? WHERE id = ?";
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, colorCode);
             ps.setLong(2, conversationId);
-            return ps.executeUpdate() > 0;
+
+            int rows = ps.executeUpdate();
+            if (rows > 0) {
+                // [MỚI] Gửi thông báo Real-time cho mọi người
+                notifyThemeChange(conversationId, colorCode);
+                return true;
+            }
         } catch (SQLException e) {
             e.printStackTrace();
-            return false;
         }
+        return false;
     }
 
     @Override
@@ -367,5 +372,34 @@ public class MessageServiceImpl extends UnicastRemoteObject implements MessageSe
             e.printStackTrace();
         }
         return "#FFFFFF"; // Mặc định trả về trắng nếu lỗi
+    }
+    private void notifyThemeChange(long conversationId, String newColor) {
+        // Lấy danh sách thành viên của cuộc hội thoại
+        String sql = "SELECT user_id FROM conversation_members WHERE conversation_id = ?";
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, conversationId);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                long userId = rs.getLong("user_id");
+
+                // Tìm callback của user đó (nếu đang online)
+                ClientCallback cb = AuthServiceImpl.getClientCallback(userId);
+                if (cb != null) {
+                    new Thread(() -> {
+                        try {
+                            // Gọi hàm callback bên Client
+                            cb.onThemeUpdate(conversationId, newColor);
+                        } catch (RemoteException e) { e.printStackTrace(); }
+                    }).start();
+                }
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+    }
+    @Override
+    public void onThemeUpdate(long userId, String theme) {
+        System.out.println("User " + userId + " updated theme to: " + theme);
+
+        // TODO: Add your logic here (e.g., update the database or notify other clients)
     }
 }

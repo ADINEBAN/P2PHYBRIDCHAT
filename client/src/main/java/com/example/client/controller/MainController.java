@@ -89,17 +89,12 @@ public class MainController {
         // 4. Xử lý sự kiện click vào List Conversation
         conversationList.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (!isUpdatingList && newVal != null) {
-                this.currentChatUser = newVal; // Lưu người đang chat
-
-                // A. Load nội dung chat (Qua ChatManager)
+                this.currentChatUser = newVal;
                 chatManager.switchChat(newVal);
 
-                // --- [MỚI] B. LOAD MÀU NỀN TỪ SERVER ---
                 new Thread(() -> {
                     try {
                         long conversationId;
-
-                        // 1. Xác định ID cuộc trò chuyện (Giống logic bên ChatInfoController)
                         if ("GROUP".equals(newVal.getUsername())) {
                             conversationId = newVal.getId();
                         } else {
@@ -107,17 +102,14 @@ public class MainController {
                             conversationId = RmiClient.getMessageService().getPrivateConversationId(myId, newVal.getId());
                         }
 
-                        // 2. Lấy màu từ Database
+                        // [MỚI - QUAN TRỌNG] Lưu lại ID để dùng cho Real-time
+                        this.activeConversationId = conversationId;
+
+                        // Lấy màu và áp dụng
                         String themeColor = RmiClient.getMessageService().getConversationTheme(conversationId);
+                        Platform.runLater(() -> applyThemeColor(themeColor));
 
-                        // 3. Áp dụng màu lên giao diện (phải dùng Platform.runLater)
-                        Platform.runLater(() -> {
-                            applyThemeColor(themeColor);
-                        });
-
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
+                    } catch (Exception e) { e.printStackTrace(); }
                 }).start();
                 // ---------------------------------------
 
@@ -439,11 +431,19 @@ public class MainController {
         // 4. Nếu đang mở Sidebar "Tin nhắn đã ghim", hãy refresh lại nó nếu cần
         // (Hiện tại Sidebar của bạn dùng nút bấm để tải lại nên không cần auto-refresh cũng được)
     }
+    // [THÊM MỚI] Hàm áp dụng màu nền cho khung chat
     public void applyThemeColor(String hexColor) {
         if (chatArea != null) {
-            // Đổi màu nền. Nếu hexColor null thì về mặc định trắng
-            String color = (hexColor != null && !hexColor.isEmpty()) ? hexColor : "#FFFFFF";
-            chatArea.setStyle("-fx-background-color: " + color + ";");
+            // Đổi màu nền của VBox chatArea (hoặc msgScrollPane tùy giao diện bạn)
+            chatArea.setStyle("-fx-background-color: " + hexColor + ";");
+
+            // Nếu màu tối quá thì đổi chữ thành màu trắng, sáng thì chữ đen (Tùy chọn nâng cao)
+        }
+    }
+    public void handleRemoteThemeUpdate(long conversationId, String newColor) {
+        // Kiểm tra: Nếu tin báo đổi màu trùng với cuộc hội thoại đang mở -> Đổi luôn
+        if (this.activeConversationId == conversationId) {
+            applyThemeColor(newColor);
         }
     }
 }
