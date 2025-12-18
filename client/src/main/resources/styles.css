@@ -343,3 +343,13 @@
     -fx-text-fill: null; /* Để màu gốc của emoji hiển thị */
     -fx-font-size: 20px;
 }
+.highlight-bubble {
+    -fx-background-color: #fff9c4; /* Vàng nhạt */
+    -fx-border-color: #ffd700;
+    -fx-border-width: 2px;
+    -fx-border-radius: 18px;
+    -fx-effect: dropshadow(three-pass-box, rgba(255, 215, 0, 0.8), 10, 0, 0, 0);
+    -fx-scale-x: 1.05;
+    -fx-scale-y: 1.05;
+    -fx-transition: all 0.3s ease-in-out;
+}

@@ -26,6 +26,16 @@
         private String content;
         private LocalDateTime createdAt;
 
+        public boolean isPinned() {
+            return pinned;
+        }
+
+        public void setPinned(boolean pinned) {
+            this.pinned = pinned;
+        }
+
+        // [THÊM MỚI] Biến lưu trạng thái ghim
+        private boolean pinned;
         // --- CÁC TRƯỜNG MỚI ---
         private MessageType type = MessageType.TEXT; // Mặc định là Text
         private byte[] fileData;  // Dữ liệu file (ảnh/tài liệu)

@@ -74,5 +74,15 @@ public class RealTimeHandler extends UnicastRemoteObject implements ClientCallba
             }
         });
     }
+    // [MỚI] Xử lý khi có tin nhắn Ghim/Bỏ ghim
+    @Override
+    public void onMessageUpdate(String msgUuid, String actionType) throws RemoteException {
+        Platform.runLater(() -> {
+            if (mainController != null) {
+                // Gọi hàm xử lý giao diện bên MainController
+                mainController.handleRemoteMessageUpdate(msgUuid, actionType);
+            }
+        });
+    }
 
 }

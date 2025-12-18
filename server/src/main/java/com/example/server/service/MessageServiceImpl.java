@@ -1,6 +1,7 @@
 package com.example.server.service;
 
 import com.example.common.dto.MessageDTO;
+import com.example.common.service.ClientCallback;
 import com.example.common.service.MessageService;
 import com.example.server.config.Database;
 
@@ -25,39 +26,39 @@ public class MessageServiceImpl extends UnicastRemoteObject implements MessageSe
         new File(STORAGE_DIR).mkdirs();
     }
 
+    // 1. LƯU TIN NHẮN (ĐÃ SỬA: LƯU CẢ message_type)
     @Override
     public void saveMessage(MessageDTO msg) throws RemoteException {
-        String sql = "INSERT INTO messages (conversation_id, sender_id, content, created_at, attachment_url, uuid) VALUES (?, ?, ?, ?, ?, ?)";
-
+        // [FIX] Thêm message_type vào câu lệnh INSERT
+        String sql = "INSERT INTO messages (conversation_id, sender_id, content, created_at, attachment_url, uuid, message_type) VALUES (?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-
             ps.setLong(1, msg.getConversationId());
             ps.setLong(2, msg.getSenderId());
-            // [AN TOÀN] Nếu content null thì lưu chuỗi rỗng
             ps.setString(3, msg.getContent() != null ? msg.getContent() : "");
             ps.setTimestamp(4, Timestamp.valueOf(msg.getCreatedAt()));
             ps.setString(5, msg.getAttachmentUrl());
-            ps.setString(6, msg.getUuid()); // Lưu UUID
+            ps.setString(6, msg.getUuid());
+            ps.setString(7, msg.getType().name()); // Lưu loại tin nhắn
 
             int rows = ps.executeUpdate();
-            if (rows > 0) {
-                System.out.println(">> Server: Đã lưu tin nhắn của User " + msg.getSenderId());
-            }
+            if (rows > 0) System.out.println(">> Server: Đã lưu tin nhắn của User " + msg.getSenderId());
         } catch (SQLException e) {
             e.printStackTrace();
             System.err.println(">> Lỗi SQL khi lưu tin nhắn: " + e.getMessage());
         }
     }
-    // Hàm xử lý Sửa / Thu hồi
+
+    // 2. CẬP NHẬT (SỬA / THU HỒI)
     public void updateMessage(String uuid, String newContent, MessageDTO.MessageType type) throws RemoteException {
         String sql = "";
         if (type == MessageDTO.MessageType.RECALL) {
-            sql = "UPDATE messages SET content = 'Tin nhắn đã thu hồi', attachment_url = NULL WHERE uuid = ?";
+            // [FIX] Thêm is_pinned = FALSE (Bỏ ghim ngay khi thu hồi)
+            sql = "UPDATE messages SET content = 'Tin nhắn đã thu hồi', attachment_url = NULL, is_pinned = FALSE WHERE uuid = ?";
         } else if (type == MessageDTO.MessageType.EDIT) {
             sql = "UPDATE messages SET content = ? WHERE uuid = ?";
         }
-
+        // ... (phần executeUpdate giữ nguyên) ...
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             if (type == MessageDTO.MessageType.EDIT) {
@@ -69,80 +70,147 @@ public class MessageServiceImpl extends UnicastRemoteObject implements MessageSe
             ps.executeUpdate();
         } catch (SQLException e) { e.printStackTrace(); }
     }
-
+    // 3. LẤY TIN NHẮN (QUAN TRỌNG: FIX LỖI HIỆN 3 CHẤM KHI THU HỒI)
     @Override
-    public List<MessageDTO> getHistory(long conversationId) throws RemoteException {
+    public List<MessageDTO> getMessagesInConversation(long conversationId, long requestUserId) throws RemoteException {
         List<MessageDTO> list = new ArrayList<>();
 
-        String sql = "SELECT m.*, u.display_name FROM messages m " +
-                "JOIN users u ON m.sender_id = u.id " +
-                "WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 50";
+        String sql = "SELECT m.* FROM messages m " +
+                "LEFT JOIN hidden_messages h ON m.id = h.message_id AND h.user_id = ? " +
+                "WHERE m.conversation_id = ? AND h.message_id IS NULL " +
+                "ORDER BY m.created_at DESC LIMIT 50";
 
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setLong(1, conversationId);
+            ps.setLong(1, requestUserId);
+            ps.setLong(2, conversationId);
+
             ResultSet rs = ps.executeQuery();
             while (rs.next()) {
                 MessageDTO msg = new MessageDTO();
                 msg.setId(rs.getLong("id"));
+                msg.setUuid(rs.getString("uuid"));
                 msg.setSenderId(rs.getLong("sender_id"));
-                msg.setSenderName(rs.getString("display_name"));
-                // --- [THÊM DÒNG NÀY] ---
-                msg.setUuid(rs.getString("uuid")); // QUAN TRỌNG: Phải lấy UUID từ DB
-                // -----------------------
 
-                // [SỬA LỖI NPE TẠI ĐÂY] Kiểm tra null khi lấy content
                 String content = rs.getString("content");
-                msg.setContent(content != null ? content : ""); // Nếu null thì gán rỗng
+                msg.setContent(content != null ? content : "");
+                msg.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
+                msg.setAttachmentUrl(rs.getString("attachment_url"));
 
-                try {
-                    msg.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
-                } catch (Exception e) {
-                    msg.setCreatedAt(java.time.LocalDateTime.now()); // Fallback nếu lỗi thời gian
-                }
-
-                String attachUrl = rs.getString("attachment_url");
-                msg.setAttachmentUrl(attachUrl);
-
-                // Logic khôi phục loại tin nhắn (Giờ đã an toàn vì msg.getContent() không bao giờ null)
-                if (attachUrl != null && !attachUrl.isEmpty()) {
-                    if (msg.getContent().contains("[Hình ảnh]")) {
-                        msg.setType(MessageDTO.MessageType.IMAGE);
-                    } else if (msg.getContent().contains("[Tin nhắn thoại]")) {
-                        msg.setType(MessageDTO.MessageType.AUDIO);
-                    } else {
-                        msg.setType(MessageDTO.MessageType.FILE);
-                    }
+                // --- [FIX LOGIC TẠI ĐÂY] ---
+                // Nếu nội dung là "Tin nhắn đã thu hồi" -> Ép kiểu về RECALL
+                // Điều này giúp ChatUIHelper nhận diện đúng và ẩn nút 3 chấm
+                if ("Tin nhắn đã thu hồi".equals(content)) {
+                    msg.setType(MessageDTO.MessageType.RECALL);
                 } else {
-                    msg.setType(MessageDTO.MessageType.TEXT);
+                    try {
+                        msg.setType(MessageDTO.MessageType.valueOf(rs.getString("message_type")));
+                    } catch (Exception e) {
+                        msg.setType(MessageDTO.MessageType.TEXT);
+                    }
                 }
+                // ---------------------------
+
+                try { msg.setPinned(rs.getBoolean("is_pinned")); } catch (Exception e) {}
 
                 list.add(msg);
             }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
+        } catch (SQLException e) { e.printStackTrace(); }
 
         Collections.reverse(list);
         return list;
     }
 
-    // --- CÁC HÀM UPLOAD/DOWNLOAD KHÔNG ĐỔI ---
+    // 4. XÓA TIN NHẮN PHÍA TÔI
+    @Override
+    public boolean deleteMessageForUser(long userId, long messageId) throws RemoteException {
+        String sql = "INSERT INTO hidden_messages (user_id, message_id) VALUES (?, ?)";
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, userId);
+            ps.setLong(2, messageId);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) { return true; }
+    }
+
+    // 5. GHIM TIN NHẮN
+    @Override
+    public boolean pinMessage(long messageId, boolean pin) throws RemoteException {
+        // 1. Cập nhật Database
+        String sqlUpdate = "UPDATE messages SET is_pinned = ? WHERE id = ?";
+        // 2. Lấy thông tin để thông báo (Conversation ID và UUID)
+        String sqlGetInfo = "SELECT conversation_id, uuid FROM messages WHERE id = ?";
+
+        Connection conn = null;
+        try {
+            conn = Database.getConnection();
+
+            // Bước A: Update trạng thái ghim
+            try (PreparedStatement ps = conn.prepareStatement(sqlUpdate)) {
+                ps.setBoolean(1, pin);
+                ps.setLong(2, messageId);
+                if (ps.executeUpdate() <= 0) return false;
+            }
+
+            // Bước B: Lấy thông tin để gửi thông báo
+            long conversationId = 0;
+            String uuid = null;
+            try (PreparedStatement ps = conn.prepareStatement(sqlGetInfo)) {
+                ps.setLong(1, messageId);
+                ResultSet rs = ps.executeQuery();
+                if (rs.next()) {
+                    conversationId = rs.getLong("conversation_id");
+                    uuid = rs.getString("uuid");
+                }
+            }
+
+            // Bước C: Gửi thông báo Real-time cho các thành viên
+            if (conversationId > 0 && uuid != null) {
+                notifyMessageUpdate(conversationId, uuid, pin ? "PIN" : "UNPIN");
+            }
+
+            return true;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        } finally {
+            if (conn != null) try { conn.close(); } catch (SQLException e) {}
+        }
+    }
+
+    // Hàm phụ trợ để gửi thông báo (Copy thêm hàm này vào class MessageServiceImpl)
+    private void notifyMessageUpdate(long conversationId, String uuid, String type) {
+        // Lấy danh sách thành viên trong cuộc hội thoại
+        String sqlMembers = "SELECT user_id FROM conversation_members WHERE conversation_id = ?";
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sqlMembers)) {
+            ps.setLong(1, conversationId);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                long userId = rs.getLong("user_id");
+                // Tìm callback của user đang online
+                ClientCallback cb = AuthServiceImpl.getClientCallback(userId);
+                if (cb != null) {
+                    new Thread(() -> {
+                        try {
+                            cb.onMessageUpdate(uuid, type);
+                        } catch (RemoteException e) { e.printStackTrace(); }
+                    }).start();
+                }
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+    }
+
+    // --- CÁC HÀM TIỆN ÍCH KHÁC (GIỮ NGUYÊN) ---
     @Override
     public String uploadFile(byte[] fileData, String fileName) throws RemoteException {
         if (fileData == null || fileData.length == 0) return null;
         try {
             String savedName = UUID.randomUUID().toString() + "_" + fileName;
             File dest = new File(STORAGE_DIR, savedName);
-            try (FileOutputStream fos = new FileOutputStream(dest)) {
-                fos.write(fileData);
-            }
-            System.out.println(">> Server: Đã nhận file " + savedName);
+            try (FileOutputStream fos = new FileOutputStream(dest)) { fos.write(fileData); }
             return savedName;
-        } catch (IOException e) {
-            e.printStackTrace();
-            throw new RemoteException("Lỗi lưu file: " + e.getMessage());
-        }
+        } catch (IOException e) { throw new RemoteException("Lỗi: " + e.getMessage()); }
     }
 
     @Override
@@ -151,9 +219,7 @@ public class MessageServiceImpl extends UnicastRemoteObject implements MessageSe
         try {
             File file = new File(STORAGE_DIR, serverPath);
             if (!file.exists()) return null;
-            try (FileInputStream fis = new FileInputStream(file)) {
-                return fis.readAllBytes();
-            }
+            try (FileInputStream fis = new FileInputStream(file)) { return fis.readAllBytes(); }
         } catch (IOException e) { return null; }
     }
 
@@ -223,5 +289,83 @@ public class MessageServiceImpl extends UnicastRemoteObject implements MessageSe
             if (rs.next()) return rs.getLong("user_id");
         } catch (SQLException e) {}
         return 0;
+    }
+    @Override
+    public List<MessageDTO> getPinnedMessages(long conversationId) throws RemoteException {
+        List<MessageDTO> list = new ArrayList<>();
+        // Chọn các tin nhắn trong cuộc hội thoại này VÀ có trạng thái is_pinned là TRUE
+        String sql = "SELECT m.*, u.display_name FROM messages m " +
+                "JOIN users u ON m.sender_id = u.id " +
+                "WHERE m.conversation_id = ? AND m.is_pinned = TRUE " +
+                "ORDER BY m.created_at DESC"; // Tin mới ghim lên đầu (hoặc tin mới nhất lên đầu)
+
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, conversationId);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                MessageDTO msg = new MessageDTO();
+                msg.setId(rs.getLong("id"));
+                msg.setSenderId(rs.getLong("sender_id"));
+                msg.setSenderName(rs.getString("display_name"));
+                msg.setContent(rs.getString("content"));
+                msg.setUuid(rs.getString("uuid"));
+                msg.setAttachmentUrl(rs.getString("attachment_url"));
+                msg.setPinned(true);
+
+                try {
+                    msg.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
+                } catch (Exception e) {
+                    msg.setCreatedAt(java.time.LocalDateTime.now());
+                }
+
+                // Xác định loại tin nhắn (Logic cũ)
+                if (msg.getAttachmentUrl() != null && !msg.getAttachmentUrl().isEmpty()) {
+                    if (msg.getContent().contains("[Hình ảnh]")) msg.setType(MessageDTO.MessageType.IMAGE);
+                    else if (msg.getContent().contains("[Tin nhắn thoại]")) msg.setType(MessageDTO.MessageType.AUDIO);
+                    else msg.setType(MessageDTO.MessageType.FILE);
+                } else {
+                    msg.setType(MessageDTO.MessageType.TEXT);
+                }
+
+                list.add(msg);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return list;
+    }
+    @Override
+    public boolean updateConversationTheme(long conversationId, String colorCode) throws RemoteException {
+        // Cập nhật màu vào bảng conversations
+        String sql = "UPDATE conversations SET theme_color = ? WHERE id = ?";
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, colorCode);
+            ps.setLong(2, conversationId);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    @Override
+    public String getConversationTheme(long conversationId) throws RemoteException {
+        // Lấy màu từ bảng conversations
+        String sql = "SELECT theme_color FROM conversations WHERE id = ?";
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, conversationId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                String color = rs.getString("theme_color");
+                // Nếu chưa có màu (null) hoặc rỗng thì trả về trắng (#FFFFFF)
+                return (color == null || color.isEmpty()) ? "#FFFFFF" : color;
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return "#FFFFFF"; // Mặc định trả về trắng nếu lỗi
     }
 }

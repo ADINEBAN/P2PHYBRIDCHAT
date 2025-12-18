@@ -19,4 +19,6 @@ public interface ClientCallback extends Remote {
     // --- [THÊM MỚI] ---
     // Hàm này được Server gọi khi user bị người khác kick khỏi nhóm
     void onRemovedFromGroup(long groupId, String groupName) throws RemoteException;
+    // [MỚI] Báo tin nhắn được cập nhật (Ghim/Bỏ ghim)
+    void onMessageUpdate(String msgUuid, String actionType) throws RemoteException;
 }

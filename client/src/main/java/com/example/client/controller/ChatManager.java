@@ -147,79 +147,102 @@ public class ChatManager {
         mc.inputField.clear();
     }
 
-    // --- [ĐÃ SỬA] CẬP NHẬT HEADER CÓ AVATAR ---
     public void switchChat(UserDTO friendOrGroup) {
+        if (friendOrGroup == null) return;
+
         mc.currentChatUser = friendOrGroup;
+
+        // 1. Cập nhật Giao diện cơ bản (Tên, ẩn Welcome, hiện Chat)
         mc.welcomeArea.setVisible(false);
         mc.chatArea.setVisible(true);
-
-        // 1. Set Tên
         mc.currentChatTitle.setText(friendOrGroup.getDisplayName());
 
-        // 2. Set Avatar (Header)
-        // Reset trước để tránh hiện avatar cũ khi đang load
+        // Reset Avatar tạm thời và xóa tin nhắn cũ
         mc.currentChatTitle.setGraphic(null);
-
-        if (friendOrGroup.getAvatarUrl() != null && !friendOrGroup.getAvatarUrl().isEmpty()) {
-            new Thread(() -> {
-                try {
-                    // Tải ảnh từ Server
-                    byte[] data = RmiClient.getMessageService().downloadFile(friendOrGroup.getAvatarUrl());
-                    if (data != null) {
-                        Image img = new Image(new ByteArrayInputStream(data));
-                        Platform.runLater(() -> {
-                            // Tạo hình tròn cho Header
-                            Circle avatarCircle = new Circle(18);
-                            avatarCircle.setFill(new ImagePattern(img));
-
-                            // Gắn vào Label tiêu đề
-                            mc.currentChatTitle.setGraphic(avatarCircle);
-                            mc.currentChatTitle.setGraphicTextGap(10); // Khoảng cách
-                        });
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }).start();
-        }
-
         mc.msgContainer.getChildren().clear();
+        mc.messageUiMap.clear(); // Xóa map tin nhắn cũ để giải phóng bộ nhớ
+
+        // Reset count tin nhắn chưa đọc trên giao diện
         friendOrGroup.setUnreadCount(0);
         mc.conversationList.refresh();
 
+        // 2. Load Avatar (Tối ưu: Resize ảnh nhỏ 50x50 để nhẹ RAM)
+        if (friendOrGroup.getAvatarUrl() != null && !friendOrGroup.getAvatarUrl().isEmpty()) {
+            new Thread(() -> {
+                try {
+                    byte[] data = RmiClient.getMessageService().downloadFile(friendOrGroup.getAvatarUrl());
+                    if (data != null) {
+                        // [TỐI ƯU] Resize ảnh về 50x50px
+                        Image img = new Image(new ByteArrayInputStream(data), 50, 50, true, true);
+                        Platform.runLater(() -> {
+                            Circle avatarCircle = new Circle(18);
+                            avatarCircle.setFill(new ImagePattern(img));
+                            mc.currentChatTitle.setGraphic(avatarCircle);
+                            mc.currentChatTitle.setGraphicTextGap(10);
+                        });
+                    }
+                } catch (Exception e) {}
+            }).start();
+        }
+
+        // 3. Lấy ID hội thoại và Tải tin nhắn
         new Thread(() -> {
             try {
+                long conversationId;
+
+                // Nếu là Nhóm -> ID chính là ID UserDTO
                 if ("GROUP".equals(friendOrGroup.getUsername())) {
-                    mc.activeConversationId = friendOrGroup.getId();
+                    conversationId = friendOrGroup.getId();
                 } else {
-                    mc.activeConversationId = RmiClient.getMessageService()
+                    // Nếu là 1-1 -> Gọi Server lấy ID riêng
+                    conversationId = RmiClient.getMessageService()
                             .getPrivateConversationId(SessionStore.currentUser.getId(), friendOrGroup.getId());
                 }
-                RmiClient.getMessageService().markAsRead(SessionStore.currentUser.getId(), mc.activeConversationId);
-                loadHistory(mc.activeConversationId);
-            } catch (Exception e) { e.printStackTrace(); }
+
+                // [QUAN TRỌNG] Cập nhật ID vào MainController để ChatInfoController dùng (cho chức năng Ghim)
+                mc.activeConversationId = conversationId;
+
+                // Đánh dấu đã đọc
+                RmiClient.getMessageService().markAsRead(SessionStore.currentUser.getId(), conversationId);
+
+                // Tải lịch sử tin nhắn
+                loadHistory(conversationId);
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }).start();
     }
-
     private void loadHistory(long conversationId) {
         try {
-            List<MessageDTO> history = RmiClient.getMessageService().getHistory(conversationId);
+            // Lấy ID của mình để Server biết đường lọc bỏ những tin nhắn mình đã "Xóa phía tôi"
+            long myId = SessionStore.currentUser.getId();
+
+            // [SỬA LẠI] Gọi hàm mới: getMessagesInConversation
+            List<MessageDTO> history = RmiClient.getMessageService()
+                    .getMessagesInConversation(conversationId, myId);
+
             Platform.runLater(() -> {
+                // Xóa tin nhắn cũ trên giao diện
                 mc.msgContainer.getChildren().clear();
                 mc.messageUiMap.clear();
 
                 for (MessageDTO msg : history) {
-                    boolean isMe = msg.getSenderId() == SessionStore.currentUser.getId();
-                    // Avatar bên cạnh tin nhắn sẽ được ChatUIHelper xử lý
-                    // Lưu ý: Cần đảm bảo ChatUIHelper đã được cập nhật logic hiển thị avatar
+                    boolean isMe = msg.getSenderId() == myId;
+
+                    // Vẽ bong bóng chat
                     VBox bubble = ChatUIHelper.addMessageBubble(mc.msgContainer, mc.msgScrollPane, msg, isMe);
+
+                    // Lưu lại tham chiếu UI để sau này xử lý sự kiện (Ghim, Xóa, Sửa)
                     if (msg.getUuid() != null && bubble != null) {
                         mc.messageUiMap.put(msg.getUuid(), bubble);
                     }
                 }
                 scrollToBottom();
             });
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private void scrollToBottom() {

@@ -149,17 +149,38 @@ public class ChatInfoController {
         dialog.showAndWait().ifPresent(type -> {
             if (type == ButtonType.OK) {
                 Color c = colorPicker.getValue();
+                // Chuyển Color thành mã Hex (ví dụ #FF0000)
                 String webColor = String.format("#%02X%02X%02X",
                         (int)(c.getRed() * 255),
                         (int)(c.getGreen() * 255),
                         (int)(c.getBlue() * 255));
 
-                System.out.println("Đã chọn màu: " + webColor);
-                // TODO: Gọi API lưu màu này vào Database (bảng conversations -> theme_color)
-                // RmiClient.getGroupService().updateTheme(currentUser.getId(), webColor);
+                new Thread(() -> {
+                    try {
+                        // 1. Xác định ID cuộc trò chuyện (Logic giống hệt lúc xem tin ghim)
+                        long targetConvId;
+                        if ("GROUP".equals(currentUser.getUsername())) {
+                            targetConvId = currentUser.getId();
+                        } else {
+                            long myId = SessionStore.currentUser.getId();
+                            targetConvId = RmiClient.getMessageService().getPrivateConversationId(myId, currentUser.getId());
+                        }
 
-                // Demo: Thông báo
-                sendSystemNotification("đã đổi chủ đề cuộc trò chuyện.");
+                        // 2. Gọi Server lưu màu
+                        boolean ok = RmiClient.getMessageService().updateConversationTheme(targetConvId, webColor);
+
+                        if (ok) {
+                            // 3. Cập nhật giao diện ngay lập tức
+                            Platform.runLater(() -> {
+                                if (mainController != null) {
+                                    // Gọi hàm đổi màu bên MainController
+                                    mainController.applyThemeColor(webColor);
+                                }
+                                sendSystemNotification("đã đổi màu chủ đề.");
+                            });
+                        }
+                    } catch (Exception e) { e.printStackTrace(); }
+                }).start();
             }
         });
     }
@@ -236,19 +257,89 @@ public class ChatInfoController {
 
     @FXML
     public void handleViewPinnedMessages() {
-        // Demo hiển thị danh sách
+        if (currentUser == null) return;
+
+        // 1. Setup UI Dialog
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setTitle("Tin nhắn đã ghim");
         alert.setHeaderText("Danh sách tin nhắn quan trọng");
 
-        ListView<String> pinnedList = new ListView<>();
-        pinnedList.getItems().addAll("📌 Nội quy nhóm", "📌 Link họp online", "📌 Deadline nộp bài");
-        pinnedList.setPrefHeight(150);
+        ListView<MessageDTO> listView = new ListView<>();
+        listView.setPrefSize(400, 300);
+        listView.setPlaceholder(new Label("Đang tải dữ liệu..."));
 
-        alert.getDialogPane().setContent(pinnedList);
+        // Setup Cell hiển thị
+        listView.setCellFactory(param -> new ListCell<>() {
+            @Override
+            protected void updateItem(MessageDTO item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setGraphic(null);
+                } else {
+                    VBox vBox = new VBox(3);
+                    Label sender = new Label(item.getSenderName());
+                    sender.setStyle("-fx-font-weight: bold; -fx-text-fill: #2980b9;");
+                    Label content = new Label(item.getContent());
+                    content.setStyle("-fx-text-fill: #333;");
+                    content.setWrapText(true);
+                    content.setMaxWidth(360);
+
+                    vBox.getChildren().addAll(sender, content);
+                    setGraphic(vBox);
+                }
+            }
+        });
+
+        // Sự kiện click để cuộn tới tin nhắn
+        listView.setOnMouseClicked(e -> {
+            MessageDTO selected = listView.getSelectionModel().getSelectedItem();
+            if (selected != null && mainController != null) {
+                mainController.scrollToMessage(selected.getUuid());
+            }
+        });
+
+        alert.getDialogPane().setContent(listView);
         alert.show();
 
-        // TODO: Gọi API lấy list tin nhắn có is_pinned = true
+        // 2. [QUAN TRỌNG] Logic lấy dữ liệu trong luồng riêng
+        new Thread(() -> {
+            try {
+                long targetConversationId;
+
+                // --- BẮT ĐẦU ĐOẠN SỬA LỖI ---
+                if ("GROUP".equals(currentUser.getUsername())) {
+                    // Nếu là Nhóm: ID Group chính là Conversation ID
+                    targetConversationId = currentUser.getId();
+                } else {
+                    // Nếu là P2P: Phải hỏi Server xem 2 người này chat ở Conversation số mấy
+                    long myId = SessionStore.currentUser.getId();
+                    long friendId = currentUser.getId();
+
+                    // Gọi hàm này để lấy số "5" như trong DB của bạn
+                    targetConversationId = RmiClient.getMessageService().getPrivateConversationId(myId, friendId);
+                }
+
+                // IN RA LOG ĐỂ KIỂM TRA (Nhìn vào tab Run/Console của IntelliJ)
+                System.out.println("DEBUG: Đang lấy tin ghim của Conversation ID = " + targetConversationId);
+                // -----------------------------
+
+                // 3. Gọi Server lấy danh sách
+                List<MessageDTO> pinnedMsgs = RmiClient.getMessageService().getPinnedMessages(targetConversationId);
+
+                System.out.println("DEBUG: Tìm thấy " + pinnedMsgs.size() + " tin nhắn ghim.");
+
+                Platform.runLater(() -> {
+                    if (pinnedMsgs.isEmpty()) {
+                        listView.setPlaceholder(new Label("Chưa có tin nhắn nào được ghim."));
+                    } else {
+                        listView.getItems().setAll(pinnedMsgs);
+                    }
+                });
+            } catch (Exception e) {
+                e.printStackTrace();
+                Platform.runLater(() -> listView.setPlaceholder(new Label("Lỗi tải dữ liệu: " + e.getMessage())));
+            }
+        }).start();
     }
 
     // --- CÁC HÀM HELPER VÀ XỬ LÝ SỰ KIỆN CŨ ---

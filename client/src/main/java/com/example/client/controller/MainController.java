@@ -9,11 +9,13 @@ import com.example.common.dto.MessageDTO;
 import com.example.common.dto.UserDTO;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
+import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane; // [MỚI] Import StackPane
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
@@ -92,7 +94,34 @@ public class MainController {
                 // A. Load nội dung chat (Qua ChatManager)
                 chatManager.switchChat(newVal);
 
-                // B. Cập nhật thanh thông tin bên phải (nếu đang mở)
+                // --- [MỚI] B. LOAD MÀU NỀN TỪ SERVER ---
+                new Thread(() -> {
+                    try {
+                        long conversationId;
+
+                        // 1. Xác định ID cuộc trò chuyện (Giống logic bên ChatInfoController)
+                        if ("GROUP".equals(newVal.getUsername())) {
+                            conversationId = newVal.getId();
+                        } else {
+                            long myId = SessionStore.currentUser.getId();
+                            conversationId = RmiClient.getMessageService().getPrivateConversationId(myId, newVal.getId());
+                        }
+
+                        // 2. Lấy màu từ Database
+                        String themeColor = RmiClient.getMessageService().getConversationTheme(conversationId);
+
+                        // 3. Áp dụng màu lên giao diện (phải dùng Platform.runLater)
+                        Platform.runLater(() -> {
+                            applyThemeColor(themeColor);
+                        });
+
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }).start();
+                // ---------------------------------------
+
+                // C. Cập nhật thanh thông tin bên phải (nếu đang mở)
                 if (mainBorderPane.getRight() != null && chatInfoController != null) {
                     chatInfoController.setUserInfo(newVal);
                 }
@@ -284,6 +313,137 @@ public class MainController {
             searchMsgField.requestFocus(); // Focus để gõ luôn
         } else {
             searchMsgField.clear(); // Xóa chữ và hiện lại tất cả tin nhắn khi tắt
+        }
+    }
+    // [ĐÃ SỬA LỖI] Xử lý xóa tin nhắn phía tôi
+    public void handleDeleteForMeAction(MessageDTO msg) {
+        if (msg == null) return;
+
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION, "Tin nhắn này sẽ bị ẩn khỏi lịch sử chat của BẠN.\nNgười kia vẫn sẽ nhìn thấy. Bạn chắc chứ?");
+        alert.setTitle("Xóa ở phía tôi");
+
+        alert.showAndWait().ifPresent(type -> {
+            if (type == ButtonType.OK) {
+                new Thread(() -> {
+                    try {
+                        long myId = SessionStore.currentUser.getId();
+                        // 1. Gọi Server lưu vào bảng hidden_messages
+                        boolean success = RmiClient.getMessageService().deleteMessageForUser(myId, msg.getId());
+
+                        if (success) {
+                            Platform.runLater(() -> {
+                                // 2. Xóa khỏi giao diện (Cách an toàn không bị ClassCastException)
+                                VBox bubble = messageUiMap.get(msg.getUuid());
+
+                                if (bubble != null) {
+                                    // Bắt đầu từ bong bóng, leo ngược lên trên để tìm cái HBox (Row) nằm trong msgContainer
+                                    javafx.scene.Node nodeToDelete = bubble;
+
+                                    // Vòng lặp: Leo lên cha cho đến khi cha của nó chính là msgContainer
+                                    while (nodeToDelete.getParent() != null && nodeToDelete.getParent() != msgContainer) {
+                                        nodeToDelete = nodeToDelete.getParent();
+                                    }
+
+                                    // Nếu tìm thấy và cha nó đúng là msgContainer -> Xóa nó đi
+                                    if (nodeToDelete != null && nodeToDelete.getParent() == msgContainer) {
+                                        msgContainer.getChildren().remove(nodeToDelete);
+                                        // Xóa khỏi map quản lý để giải phóng bộ nhớ
+                                        messageUiMap.remove(msg.getUuid());
+                                    }
+                                } else {
+                                    // Trường hợp hiếm: Không tìm thấy bong bóng -> Load lại cho chắc
+                                    chatManager.switchChat(currentChatUser);
+                                }
+                            });
+                        }
+                    } catch (Exception e) { e.printStackTrace(); }
+                }).start();
+            }
+        });
+    }
+
+    // Xử lý Ghim tin nhắn
+    public void handlePinAction(MessageDTO msg) {
+        new Thread(() -> {
+            try {
+                boolean newStatus = !msg.isPinned(); // Đảo trạng thái (Ghim <-> Bỏ ghim)
+                boolean ok = RmiClient.getMessageService().pinMessage(msg.getId(), newStatus);
+                if(ok) {
+                    Platform.runLater(() -> {
+                        msg.setPinned(newStatus);
+                        Alert a = new Alert(Alert.AlertType.INFORMATION, newStatus ? "Đã ghim tin nhắn!" : "Đã bỏ ghim!");
+                        a.show();
+                    });
+                }
+            } catch(Exception e) { e.printStackTrace(); }
+        }).start();
+    }
+    // [MỚI] Hàm cuộn tới tin nhắn và nháy màu
+    public void scrollToMessage(String uuid) {
+        VBox bubble = messageUiMap.get(uuid);
+        if (bubble != null) {
+            // 1. Tính toán cuộn
+            // Lấy Node cha (HBox row) để tính vị trí chính xác hơn
+            Node row = bubble.getParent().getParent().getParent();
+            if (row != null) {
+                double contentHeight = msgContainer.getBoundsInLocal().getHeight();
+                double nodeY = row.getBoundsInParent().getMinY();
+                double vValue = nodeY / contentHeight;
+                msgScrollPane.setVvalue(vValue);
+            }
+
+            // 2. Hiệu ứng nháy vàng (Flash)
+            // Xóa class cũ nếu có để reset hiệu ứng
+            bubble.getStyleClass().remove("highlight-bubble");
+
+            // Thêm class để kích hoạt animation
+            Platform.runLater(() -> {
+                bubble.getStyleClass().add("highlight-bubble");
+
+                // Sau 2 giây tự tắt
+                new Thread(() -> {
+                    try { Thread.sleep(2000); } catch (InterruptedException e) {}
+                    Platform.runLater(() -> bubble.getStyleClass().remove("highlight-bubble"));
+                }).start();
+            });
+        } else {
+            Alert alert = new Alert(Alert.AlertType.INFORMATION, "Tin nhắn này chưa được tải (nằm ở trang cũ).\nHãy cuộn lên để tải thêm!");
+            alert.show();
+        }
+    }
+    // Xử lý sự kiện Ghim/Bỏ ghim từ Server báo về (Real-time)
+    public void handleRemoteMessageUpdate(String uuid, String actionType) {
+        // 1. Tìm bong bóng chat đang hiển thị
+        VBox bubble = messageUiMap.get(uuid);
+
+        if (bubble != null) {
+            boolean isPinned = "PIN".equals(actionType); // True nếu là hành động GHIM
+
+            // 2. Cập nhật Giao diện (Thêm/Xóa viền vàng)
+            if (isPinned) {
+                if (!bubble.getStyleClass().contains("pinned-bubble")) {
+                    bubble.getStyleClass().add("pinned-bubble");
+                }
+            } else {
+                bubble.getStyleClass().remove("pinned-bubble");
+            }
+
+            // 3. [QUAN TRỌNG] Cập nhật dữ liệu ngầm (MessageDTO)
+            // Để lần sau bạn chuột phải, menu sẽ hiện đúng là "Bỏ ghim" hay "Ghim"
+            if (bubble.getUserData() instanceof MessageDTO) {
+                MessageDTO msg = (MessageDTO) bubble.getUserData();
+                msg.setPinned(isPinned);
+            }
+        }
+
+        // 4. Nếu đang mở Sidebar "Tin nhắn đã ghim", hãy refresh lại nó nếu cần
+        // (Hiện tại Sidebar của bạn dùng nút bấm để tải lại nên không cần auto-refresh cũng được)
+    }
+    public void applyThemeColor(String hexColor) {
+        if (chatArea != null) {
+            // Đổi màu nền. Nếu hexColor null thì về mặc định trắng
+            String color = (hexColor != null && !hexColor.isEmpty()) ? hexColor : "#FFFFFF";
+            chatArea.setStyle("-fx-background-color: " + color + ";");
         }
     }
 }

@@ -2,7 +2,7 @@ package com.example.client.controller;
 
 import com.example.client.net.RmiClient;
 import com.example.client.util.AudioHelper;
-import com.example.client.util.EmojiHandler;
+import com.example.client.util.ThreadManager;
 import com.example.common.dto.MessageDTO;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -73,13 +73,17 @@ public class ChatUIHelper {
 
         // --- [2] BONG BÓNG CHAT ---
         VBox bubble = new VBox(contentNode);
+        bubble.setUserData(msg);
         if (msg.getType() != MessageDTO.MessageType.NOTIFICATION) {
             bubble.getStyleClass().add(isMe ? "bubble-me" : "bubble-other");
         } else {
             bubble.setAlignment(Pos.CENTER);
         }
+//        if (msg.isPinned()) {
+//            bubble.getStyleClass().add("pinned-bubble");
+//        }
 
-        // --- [3] WRAPPER (CHỨA REACTION LABEL - ĐỂ HIỂN THỊ CẢM XÚC NẾU CÓ) ---
+        // --- [3] WRAPPER (CHỨA REACTION) ---
         StackPane bubbleWrapper = new StackPane();
         bubbleWrapper.setAlignment(isMe ? Pos.BOTTOM_RIGHT : Pos.BOTTOM_LEFT);
         bubbleWrapper.getChildren().add(bubble);
@@ -95,7 +99,7 @@ public class ChatUIHelper {
             bubbleWrapper.getChildren().add(reactionLabel);
         }
 
-        // --- [4] XỬ LÝ SỰ KIỆN MENU ---
+        // --- [4] XỬ LÝ SỰ KIỆN MENU (Chuột phải vào bong bóng cũng hiện) ---
         if (msg.getType() != MessageDTO.MessageType.NOTIFICATION) {
             bubble.setOnContextMenuRequested(e -> {
                 ContextMenu menu = createContextMenu(msg, isMe, bubble, reactionLabel);
@@ -110,21 +114,27 @@ public class ChatUIHelper {
         if (msg.getType() == MessageDTO.MessageType.NOTIFICATION) {
             contentRow.getChildren().add(bubble);
         } else {
+            // Nút 3 chấm (Tạo chung để dùng cho cả 2 bên)
+            Button optionsBtn = null;
+            if (msg.getType() != MessageDTO.MessageType.RECALL) {
+                optionsBtn = new Button("⋮");
+                optionsBtn.getStyleClass().add("btn-msg-options");
+                // Style cho nút mờ nhạt, hiện khi hover (hoặc luôn hiện)
+                optionsBtn.setStyle("-fx-background-color: transparent; -fx-text-fill: #999; -fx-font-size: 14px; -fx-cursor: hand; -fx-font-weight: bold;");
+
+                Button finalOptionsBtn = optionsBtn;
+                optionsBtn.setOnAction(e -> {
+                    ContextMenu menu = createContextMenu(msg, isMe, bubble, reactionLabel);
+                    Point2D screenLoc = finalOptionsBtn.localToScreen(0, finalOptionsBtn.getHeight());
+                    menu.show(finalOptionsBtn, screenLoc.getX(), screenLoc.getY());
+                });
+            }
+
             if (isMe) {
                 // --- TIN NHẮN CỦA TÔI ---
                 contentRow.setAlignment(Pos.CENTER_RIGHT);
-
-                // Nút 3 chấm
-                if (msg.getType() != MessageDTO.MessageType.RECALL) {
-                    Button optionsBtn = new Button("⋮");
-                    optionsBtn.getStyleClass().add("btn-msg-options");
-
-                    optionsBtn.setOnAction(e -> {
-                        ContextMenu menu = createContextMenu(msg, isMe, bubble, reactionLabel);
-                        Point2D screenLoc = optionsBtn.localToScreen(0, optionsBtn.getHeight());
-                        menu.show(optionsBtn, screenLoc.getX(), screenLoc.getY());
-                    });
-
+                if (optionsBtn != null) {
+                    // Nút Option -> Bong bóng
                     contentRow.getChildren().addAll(optionsBtn, bubbleWrapper);
                 } else {
                     contentRow.getChildren().add(bubbleWrapper);
@@ -138,8 +148,12 @@ public class ChatUIHelper {
                 avatarCircle.setFill(javafx.scene.paint.Color.LIGHTGRAY);
                 loadAvatar(avatarCircle);
 
-                // [ĐÃ SỬA] Đã bỏ nút reactBtn (☺) ở đây
-                contentRow.getChildren().addAll(avatarCircle, bubbleWrapper);
+                if (optionsBtn != null) {
+                    // [ĐÃ SỬA] Avatar -> Bong bóng -> Nút Option
+                    contentRow.getChildren().addAll(avatarCircle, bubbleWrapper, optionsBtn);
+                } else {
+                    contentRow.getChildren().addAll(avatarCircle, bubbleWrapper);
+                }
             }
         }
 
@@ -162,12 +176,16 @@ public class ChatUIHelper {
 
         row.setPadding(new Insets(2, 10, 2, 10));
         row.getChildren().add(messageBlock);
-        if (msg.getContent() != null) {
-            // Lưu chữ thường để tìm không phân biệt hoa thường
-            row.setUserData(msg.getContent().toLowerCase());
-        }
+
+        // Lưu text để tìm kiếm
+        if (msg.getContent() != null) row.setUserData(msg.getContent().toLowerCase());
+
         Platform.runLater(() -> {
             msgContainer.getChildren().add(row);
+            // Lưu uuid vào map để xóa sau này
+            if (mainController != null && msg.getUuid() != null) {
+                mainController.messageUiMap.put(msg.getUuid(), bubble);
+            }
             msgContainer.layout();
             msgScrollPane.layout();
             msgScrollPane.setVvalue(1.0);
@@ -176,42 +194,61 @@ public class ChatUIHelper {
         return bubble;
     }
 
-    // --- HÀM TẠO MENU ---
+    // --- HÀM TẠO MENU (ĐÃ SỬA: HIỆN NÚT GHIM/XÓA CHO CẢ 2 BÊN) ---
     private static ContextMenu createContextMenu(MessageDTO msg, boolean isMe, Node anchorNode, Label reactionLabel) {
         ContextMenu contextMenu = new ContextMenu();
 
-        // Chức năng của mình
+        // 1. CHỨC NĂNG CHUNG (Ghim & Xóa phía tôi) - HIỆN CHO TẤT CẢ
+        if (msg.getType() != MessageDTO.MessageType.RECALL &&
+                msg.getType() != MessageDTO.MessageType.NOTIFICATION &&
+                mainController != null) {
+
+            MenuItem pinItem = new MenuItem(msg.isPinned() ? "Bỏ ghim" : "📌 Ghim tin nhắn");
+            pinItem.setOnAction(ev -> mainController.handlePinAction(msg));
+            contextMenu.getItems().add(pinItem);
+
+            MenuItem deleteMeItem = new MenuItem("🗑 Xóa ở phía tôi");
+            deleteMeItem.setStyle("-fx-text-fill: red;");
+            deleteMeItem.setOnAction(ev -> mainController.handleDeleteForMeAction(msg));
+            contextMenu.getItems().add(deleteMeItem);
+
+            contextMenu.getItems().add(new SeparatorMenuItem());
+        }
+
+        // 2. CHỨC NĂNG RIÊNG (Sửa & Thu hồi) - CHỈ HIỆN CHO TÔI
         if (isMe && msg.getType() != MessageDTO.MessageType.RECALL && mainController != null) {
             if (msg.getType() == MessageDTO.MessageType.TEXT) {
                 MenuItem editItem = new MenuItem("✏ Chỉnh sửa");
                 editItem.setOnAction(ev -> mainController.handleEditAction(msg));
                 contextMenu.getItems().add(editItem);
             }
-            MenuItem recallItem = new MenuItem("🚫 Thu hồi");
+            MenuItem recallItem = new MenuItem("🚫 Thu hồi (Mọi người)");
             recallItem.setOnAction(ev -> mainController.handleRecallAction(msg));
             contextMenu.getItems().add(recallItem);
         }
+
         return contextMenu;
     }
 
-    // --- HELPER LOAD AVATAR ---
+    // --- CÁC HÀM HELPER KHÁC GIỮ NGUYÊN (LOAD AVATAR, MEDIA...) ---
+    // (Đã dùng ThreadManager như phiên bản trước để tối ưu)
+
     private static void loadAvatar(Circle avatarCircle) {
         String avatarUrl = null;
         if (mainController != null && mainController.currentChatUser != null) {
             avatarUrl = mainController.currentChatUser.getAvatarUrl();
         }
         if (avatarUrl != null && !avatarUrl.isEmpty()) {
-            try {
-                new Thread(() -> {
-                    try {
-                        byte[] data = RmiClient.getMessageService().downloadFile(mainController.currentChatUser.getAvatarUrl());
-                        if (data != null) {
-                            Image img = new Image(new ByteArrayInputStream(data));
-                            Platform.runLater(() -> avatarCircle.setFill(new ImagePattern(img)));
-                        }
-                    } catch (Exception e) {}
-                }).start();
-            } catch (Exception e) {}
+            final String finalUrl = avatarUrl;
+            ThreadManager.imageExecutor.submit(() -> {
+                try {
+                    byte[] data = RmiClient.getMessageService().downloadFile(finalUrl);
+                    if (data != null) {
+                        Image img = new Image(new ByteArrayInputStream(data), 64, 64, true, true);
+                        Platform.runLater(() -> avatarCircle.setFill(new ImagePattern(img)));
+                    }
+                } catch (Exception e) {}
+            });
         }
     }
 
@@ -221,29 +258,37 @@ public class ChatUIHelper {
             Label lbl = new Label(newContent);
 
             if (isRecall) {
+                // 1. Style lại bong bóng thành màu xám (Tin nhắn thu hồi)
                 lbl.setStyle("-fx-font-style: italic; -fx-text-fill: #888888;");
                 bubble.getStyleClass().removeAll("bubble-me", "bubble-other");
                 bubble.setStyle("-fx-background-color: #f0f0f0; -fx-background-radius: 18px; -fx-padding: 10 15;");
 
-                // Xóa nút 3 chấm và Reaction nếu có
+                // 2. [QUAN TRỌNG] Tìm và xóa nút 3 chấm + Reaction
                 if (bubble.getParent() instanceof StackPane) {
                     StackPane wrapper = (StackPane) bubble.getParent();
-                    wrapper.getChildren().removeIf(node -> node instanceof Label); // Xóa reaction label
+
+                    // A. Xóa Reaction (nếu có) - Reaction là Label nằm trong wrapper
+                    wrapper.getChildren().removeIf(node -> node instanceof Label);
+
+                    // B. Xóa Nút 3 chấm - Nằm trong HBox contentRow (cha của wrapper)
                     if (wrapper.getParent() instanceof HBox) {
                         HBox parentRow = (HBox) wrapper.getParent();
-                        parentRow.getChildren().removeIf(node -> node instanceof Button); // Xóa nút option
+
+                        // Xóa tất cả các nút Button trong hàng này (Chính là nút 3 chấm)
+                        parentRow.getChildren().removeIf(node -> node instanceof Button);
                     }
                 }
             } else {
+                // Logic hiển thị tin nhắn chỉnh sửa (không phải thu hồi)
                 boolean isMe = bubble.getStyleClass().contains("bubble-me");
                 lbl.getStyleClass().add(isMe ? "text-me" : "text-other");
             }
+
             bubble.getChildren().add(lbl);
         });
     }
-
-    // --- CÁC HÀM CŨ ---
     private static VBox handleLazyLoading(VBox msgContainer, ScrollPane msgScrollPane, MessageDTO msg, boolean isMe) {
+        // (Giữ nguyên logic Lazy Load đã tối ưu ở câu trả lời trước)
         Label loadingLabel = new Label("⟳ Đang tải...");
         loadingLabel.setStyle("-fx-text-fill: gray; -fx-font-size: 11px;");
         VBox bubble = new VBox(loadingLabel);
@@ -255,12 +300,14 @@ public class ChatUIHelper {
         HBox row = new HBox(messageBlock);
         row.setAlignment(isMe ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
         row.setPadding(new Insets(2, 10, 2, 10));
+
         Platform.runLater(() -> {
             msgContainer.getChildren().add(row);
+            if (mainController != null && msg.getUuid() != null) mainController.messageUiMap.put(msg.getUuid(), bubble);
             msgScrollPane.setVvalue(1.0);
         });
 
-        new Thread(() -> {
+        ThreadManager.networkExecutor.submit(() -> {
             try {
                 byte[] downloadedData = RmiClient.getMessageService().downloadFile(msg.getAttachmentUrl());
                 Platform.runLater(() -> {
@@ -271,54 +318,41 @@ public class ChatUIHelper {
                         else if (msg.getType() == MessageDTO.MessageType.AUDIO) realNode = createAudioNode(msg, isMe);
                         else realNode = createFileNode(msgContainer, msg, isMe);
                         bubble.getChildren().setAll(realNode);
-                    } else {
-                        loadingLabel.setText("❌ Lỗi tải");
-                    }
+                    } else { loadingLabel.setText("❌ Lỗi tải"); }
                 });
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }).start();
+            } catch (Exception e) {}
+        });
         return bubble;
     }
 
     private static Node createImageNode(byte[] imageData) {
         try {
             ByteArrayInputStream bis = new ByteArrayInputStream(imageData);
-            Image image = new Image(bis);
+            Image image = new Image(bis, 400, 0, true, true);
             ImageView imageView = new ImageView(image);
             imageView.setFitWidth(250);
             imageView.setPreserveRatio(true);
             imageView.setSmooth(true);
             StackPane container = new StackPane(imageView);
             Rectangle clip = new Rectangle();
-            clip.setArcWidth(20);
-            clip.setArcHeight(20);
+            clip.setArcWidth(20); clip.setArcHeight(20);
             clip.widthProperty().bind(container.widthProperty());
             clip.heightProperty().bind(container.heightProperty());
             container.setClip(clip);
             return container;
-        } catch (Exception e) {
-            return new Label("❌ Lỗi ảnh");
-        }
+        } catch (Exception e) { return new Label("❌ Lỗi ảnh"); }
     }
 
     private static Node createFileNode(VBox container, MessageDTO msg, boolean isMe) {
-        String fName = msg.getFileName();
-        if (fName == null || fName.isEmpty()) fName = "Tài liệu";
+        String fName = msg.getFileName() != null ? msg.getFileName() : "Tài liệu";
         Button downloadBtn = new Button("📄 " + (fName.length() > 25 ? fName.substring(0, 22) + "..." : fName));
         downloadBtn.setStyle("-fx-background-color: transparent; -fx-text-fill: " + (isMe ? "white" : "#333333") + "; -fx-cursor: hand; -fx-font-size: 14px;");
-        String finalName = fName;
         downloadBtn.setOnAction(event -> {
             FileChooser fc = new FileChooser();
-            fc.setInitialFileName(finalName);
+            fc.setInitialFileName(fName);
             File f = fc.showSaveDialog(downloadBtn.getScene().getWindow());
             if (f != null) {
-                new Thread(() -> {
-                    try {
-                        Files.write(f.toPath(), msg.getFileData());
-                    } catch (Exception e) {}
-                }).start();
+                ThreadManager.networkExecutor.submit(() -> { try { Files.write(f.toPath(), msg.getFileData()); } catch (Exception e) {} });
             }
         });
         return downloadBtn;
@@ -330,16 +364,11 @@ public class ChatUIHelper {
         playBtn.setOnAction(e -> {
             playBtn.setText("🔊 Đang phát...");
             playBtn.setDisable(true);
-            new Thread(() -> {
+            ThreadManager.networkExecutor.submit(() -> {
                 AudioHelper.playAudio(msg.getFileData());
-                try {
-                    Thread.sleep(2000);
-                } catch (Exception ex) {}
-                Platform.runLater(() -> {
-                    playBtn.setText("▶  Nghe lại");
-                    playBtn.setDisable(false);
-                });
-            }).start();
+                try { Thread.sleep(2000); } catch (Exception ex) {}
+                Platform.runLater(() -> { playBtn.setText("▶  Nghe lại"); playBtn.setDisable(false); });
+            });
         });
         return playBtn;
     }
