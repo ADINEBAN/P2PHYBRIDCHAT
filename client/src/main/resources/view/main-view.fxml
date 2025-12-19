@@ -54,7 +54,8 @@
                 </Button>
             </HBox>
 
-            <TextField promptText="Tìm kiếm trên Messenger..." styleClass="input-field" />
+            <TextField fx:id="txtSearchFriend" promptText="Tìm kiếm trên Messenger..." styleClass="input-field" />
+
             <HBox alignment="CENTER" spacing="20.0" style="-fx-padding: 10 0 0 0;">
                 <Button onAction="#handleAddFriend" styleClass="btn-icon" text="➕">
                     <tooltip><Tooltip text="Thêm bạn bè"/></tooltip>
@@ -88,14 +89,28 @@
                         <font><Font name="Segoe UI Bold" size="18.0"/></font>
                     </Label>
 
-                    <TextField fx:id="searchMsgField" promptText="Tìm trong đoạn chat..."
-                               visible="false" managed="false"
-                               style="-fx-background-radius: 15; -fx-padding: 5 10; -fx-pref-width: 200;" />
-
                     <Region HBox.hgrow="ALWAYS" />
 
                     <Button onAction="#handleVoiceCall" styleClass="btn-icon" text="📹" />
                     <Button onAction="#handleToggleInfo" styleClass="btn-icon" text="ℹ" />
+                </HBox>
+
+                <HBox fx:id="searchBarContainer" alignment="CENTER_LEFT" spacing="5.0" style="-fx-padding: 5 10 5 10; -fx-background-color: #f0f2f5; -fx-border-color: #e4e6eb; -fx-border-width: 0 0 1 0;">
+
+                    <TextField fx:id="searchMsgField"
+                               promptText="Nhập từ khóa tìm kiếm..."
+                               visible="false"
+                               managed="false"
+                               HBox.hgrow="ALWAYS"
+                               style="-fx-background-radius: 20; -fx-padding: 6 10; -fx-background-color: white; -fx-border-color: #ddd; -fx-border-radius: 20;"/>
+
+                    <Label fx:id="lblSearchCount" text="" visible="false" managed="false" style="-fx-text-fill: gray; -fx-font-size: 11px; -fx-padding: 0 5 0 5;"/>
+
+                    <Button fx:id="btnSearchUp" text="▲" onAction="#handleSearchUp" visible="false" managed="false"
+                            style="-fx-background-color: transparent; -fx-cursor: hand; -fx-text-fill: #65676b; -fx-font-size: 10px; -fx-border-color: #ddd; -fx-border-radius: 50%;"/>
+
+                    <Button fx:id="btnSearchDown" text="▼" onAction="#handleSearchDown" visible="false" managed="false"
+                            style="-fx-background-color: transparent; -fx-cursor: hand; -fx-text-fill: #65676b; -fx-font-size: 10px; -fx-border-color: #ddd; -fx-border-radius: 50%;"/>
                 </HBox>
 
                 <ScrollPane fx:id="msgScrollPane" fitToWidth="true" hbarPolicy="NEVER" styleClass="scroll-pane" vbarPolicy="AS_NEEDED" VBox.vgrow="ALWAYS">
@@ -129,7 +144,6 @@
             <BorderPane.margin>
                 <Insets left="15"/>
             </BorderPane.margin>
-
             <fx:include fx:id="chatInfo" source="chat-info.fxml" />
         </StackPane>
     </right>

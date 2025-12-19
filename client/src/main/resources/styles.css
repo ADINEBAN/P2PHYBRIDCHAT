@@ -353,3 +353,10 @@
     -fx-scale-y: 1.05;
     -fx-transition: all 0.3s ease-in-out;
 }
+.search-highlight {
+    -fx-background-color: #fff9c4; /* Nền vàng nhạt */
+    -fx-border-color: #fbc02d;     /* Viền vàng đậm */
+    -fx-border-width: 2px;
+    -fx-border-radius: 10px;
+    -fx-background-radius: 10px;
+}

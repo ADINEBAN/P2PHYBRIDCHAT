@@ -23,51 +23,43 @@ import java.io.File;
 import java.nio.file.Files;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
 public class ChatInfoController {
 
     // --- UI HEADER ---
     @FXML private ImageView avatarView;
     @FXML private Label nameLabel;
-    @FXML private Button changeAvatarBtn; // Nút camera trên avatar (Chỉ hiện khi là Admin nhóm)
+    @FXML private Button changeAvatarBtn;
 
     // --- UI CẤU TRÚC (Accordion) ---
-    @FXML private Accordion infoAccordion; // Để điều khiển các Tab
-    @FXML private TitledPane membersPane;  // Tab "Thành viên nhóm" (Sẽ ẩn đi khi chat 1-1)
+    @FXML private Accordion infoAccordion;
+    @FXML private TitledPane membersPane;
 
     // --- UI THÀNH VIÊN & ADMIN ---
     @FXML private Button addMemberBtn;
     @FXML private ListView<UserDTO> memberListView;
-    @FXML private VBox adminControls; // Vùng chứa nút Đổi tên/Giải tán
+    @FXML private VBox adminControls;
     @FXML private Button editGroupBtn;
     @FXML private Button dissolveGroupBtn;
     @FXML private Button leaveGroupBtn;
 
     // --- UI KHÁC ---
-    // Hộp chứa nút Trang cá nhân (Dành cho chat 1-1)
     @FXML private VBox personalProfileBox;
 
     private boolean amIAdmin = false;
     private MainController mainController;
-    private UserDTO currentUser; // Đây là đối tượng đang chat (User hoặc Group)
+    private UserDTO currentUser;
 
     public void setMainController(MainController mainController) {
         this.mainController = mainController;
     }
 
-    /**
-     * Hàm quan trọng nhất: Nhận thông tin và quyết định hiển thị giao diện 1-1 hay Nhóm
-     */
     public void setUserInfo(UserDTO groupOrUser) {
         this.currentUser = groupOrUser;
         if (currentUser == null) return;
-
-        // 1. Load thông tin cơ bản
         nameLabel.setText(currentUser.getDisplayName());
         loadAvatar(currentUser.getAvatarUrl());
 
-        // 2. Phân loại giao diện
         if ("GROUP".equals(currentUser.getUsername())) {
             setupGroupUI();
         } else {
@@ -75,70 +67,53 @@ public class ChatInfoController {
         }
     }
 
-    // --- LOGIC GIAO DIỆN CHAT 1-1 ---
     private void setupP2PUI() {
-        // 1. Ẩn Tab thành viên khỏi Accordion
-        if (infoAccordion != null && membersPane != null) {
-            infoAccordion.getPanes().remove(membersPane);
-        }
-
-        // 2. Ẩn các nút Admin & Rời nhóm
-        if (adminControls != null) {
-            adminControls.setVisible(false);
-            adminControls.setManaged(false);
-        }
-        if (leaveGroupBtn != null) {
-            leaveGroupBtn.setVisible(false);
-            leaveGroupBtn.setManaged(false);
-        }
-        if (changeAvatarBtn != null) {
-            changeAvatarBtn.setVisible(false);
-        }
-
-        // 3. Hiện nút Trang cá nhân (Nếu có)
-        if (personalProfileBox != null) {
-            personalProfileBox.setVisible(true);
-            personalProfileBox.setManaged(true);
-        }
+        if (infoAccordion != null && membersPane != null) infoAccordion.getPanes().remove(membersPane);
+        if (adminControls != null) { adminControls.setVisible(false); adminControls.setManaged(false); }
+        if (leaveGroupBtn != null) { leaveGroupBtn.setVisible(false); leaveGroupBtn.setManaged(false); }
+        if (changeAvatarBtn != null) changeAvatarBtn.setVisible(false);
+        if (personalProfileBox != null) { personalProfileBox.setVisible(true); personalProfileBox.setManaged(true); }
     }
 
-    // --- LOGIC GIAO DIỆN NHÓM ---
     private void setupGroupUI() {
-        // 1. Thêm lại Tab thành viên vào Accordion (nếu chưa có)
-        if (infoAccordion != null && membersPane != null) {
-            if (!infoAccordion.getPanes().contains(membersPane)) {
-                infoAccordion.getPanes().add(0, membersPane); // Thêm vào vị trí đầu
-                infoAccordion.setExpandedPane(membersPane); // Mở sẵn tab này
-            }
+        if (infoAccordion != null && membersPane != null && !infoAccordion.getPanes().contains(membersPane)) {
+            infoAccordion.getPanes().add(0, membersPane);
+            infoAccordion.setExpandedPane(membersPane);
         }
-
-        // 2. Ẩn nút Trang cá nhân
-        if (personalProfileBox != null) {
-            personalProfileBox.setVisible(false);
-            personalProfileBox.setManaged(false);
-        }
-
-        // 3. Hiện nút Rời nhóm và List thành viên
-        if (leaveGroupBtn != null) {
-            leaveGroupBtn.setVisible(true);
-            leaveGroupBtn.setManaged(true);
-        }
-        if (memberListView != null) {
-            memberListView.setVisible(true);
-        }
-        if (addMemberBtn != null) {
-            addMemberBtn.setVisible(true); // Mặc định hiện, có thể ẩn nếu muốn chỉ Admin mới được mời
-        }
-
-        // 4. Kiểm tra quyền Admin để hiện các nút nâng cao
+        if (personalProfileBox != null) { personalProfileBox.setVisible(false); personalProfileBox.setManaged(false); }
+        if (leaveGroupBtn != null) { leaveGroupBtn.setVisible(true); leaveGroupBtn.setManaged(true); }
+        if (memberListView != null) memberListView.setVisible(true);
+        if (addMemberBtn != null) addMemberBtn.setVisible(true);
         checkAdminStatus();
     }
 
-    // --- CÁC TÍNH NĂNG MỚI (THEME, NICKNAME, PINNED) ---
+    // --- [SỬA LẠI] XỬ LÝ KHO LƯU TRỮ (MEDIA & FILES) ---
+    // Sử dụng luôn onAction đã khai báo trong FXML
+
+    @FXML
+    public void handleViewMedia() {
+        if (mainController != null && mainController.getChatManager() != null) {
+            // Gọi hàm xử lý thật sự bên ChatManager (Hàm bạn đã thêm ở bước trước)
+            mainController.getChatManager().openImageRepository();
+        } else {
+            System.err.println("Chưa kết nối MainController!");
+        }
+    }
+
+    @FXML
+    public void handleViewFiles() {
+        if (mainController != null && mainController.getChatManager() != null) {
+            // Gọi hàm xử lý thật sự bên ChatManager
+            mainController.getChatManager().openFileRepository();
+        } else {
+            System.err.println("Chưa kết nối MainController!");
+        }
+    }
+
+    // --- CÁC TÍNH NĂNG KHÁC (GIỮ NGUYÊN) ---
 
     @FXML
     public void handleChangeTheme() {
-        // Mở hộp thoại chọn màu
         ColorPicker colorPicker = new ColorPicker(Color.WHITE);
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Đổi chủ đề");
@@ -149,33 +124,16 @@ public class ChatInfoController {
         dialog.showAndWait().ifPresent(type -> {
             if (type == ButtonType.OK) {
                 Color c = colorPicker.getValue();
-                // Chuyển Color thành mã Hex (ví dụ #FF0000)
-                String webColor = String.format("#%02X%02X%02X",
-                        (int)(c.getRed() * 255),
-                        (int)(c.getGreen() * 255),
-                        (int)(c.getBlue() * 255));
-
+                String webColor = String.format("#%02X%02X%02X", (int)(c.getRed() * 255), (int)(c.getGreen() * 255), (int)(c.getBlue() * 255));
                 new Thread(() -> {
                     try {
-                        // 1. Xác định ID cuộc trò chuyện (Logic giống hệt lúc xem tin ghim)
                         long targetConvId;
-                        if ("GROUP".equals(currentUser.getUsername())) {
-                            targetConvId = currentUser.getId();
-                        } else {
-                            long myId = SessionStore.currentUser.getId();
-                            targetConvId = RmiClient.getMessageService().getPrivateConversationId(myId, currentUser.getId());
-                        }
-
-                        // 2. Gọi Server lưu màu
+                        if ("GROUP".equals(currentUser.getUsername())) targetConvId = currentUser.getId();
+                        else targetConvId = RmiClient.getMessageService().getPrivateConversationId(SessionStore.currentUser.getId(), currentUser.getId());
                         boolean ok = RmiClient.getMessageService().updateConversationTheme(targetConvId, webColor);
-
                         if (ok) {
-                            // 3. Cập nhật giao diện ngay lập tức
                             Platform.runLater(() -> {
-                                if (mainController != null) {
-                                    // Gọi hàm đổi màu bên MainController
-                                    mainController.applyThemeColor(webColor);
-                                }
+                                if (mainController != null) mainController.applyThemeColor(webColor);
                                 sendSystemNotification("đã đổi màu chủ đề.");
                             });
                         }
@@ -189,16 +147,9 @@ public class ChatInfoController {
     public void handleEditNickname() {
         TextInputDialog dialog = new TextInputDialog();
         dialog.setTitle("Chỉnh sửa biệt danh");
-
-        // Kiểm tra xem đang ở Nhóm hay Chat 1-1
         boolean isGroup = "GROUP".equals(currentUser.getUsername());
-
-        if (isGroup) {
-            dialog.setHeaderText("Đặt biệt danh cho BẠN trong nhóm này:");
-        } else {
-            dialog.setHeaderText("Đặt biệt danh cho " + currentUser.getDisplayName() + ":");
-        }
-
+        if (isGroup) dialog.setHeaderText("Đặt biệt danh cho BẠN trong nhóm này:");
+        else dialog.setHeaderText("Đặt biệt danh cho " + currentUser.getDisplayName() + ":");
         dialog.setContentText("Biệt danh mới:");
 
         dialog.showAndWait().ifPresent(nickname -> {
@@ -206,50 +157,26 @@ public class ChatInfoController {
                 new Thread(() -> {
                     try {
                         long myId = SessionStore.currentUser.getId();
-                        long targetId = currentUser.getId(); // ID của Nhóm hoặc ID của Bạn bè
-                        boolean ok = false;
-
-                        if (isGroup) {
-                            // --- TRƯỜNG HỢP NHÓM: Đổi nickname của CHÍNH MÌNH ---
-                            ok = RmiClient.getGroupService().updateNickname(targetId, myId, nickname);
-                        } else {
-                            // --- TRƯỜNG HỢP 1-1: Đổi nickname của BẠN BÈ ---
-                            // Lưu ý: targetId lúc này là ID người bạn
-                            ok = RmiClient.getFriendService().updateFriendNickname(myId, targetId, nickname);
-                        }
+                        long targetId = currentUser.getId();
+                        boolean ok;
+                        if (isGroup) ok = RmiClient.getGroupService().updateNickname(targetId, myId, nickname);
+                        else ok = RmiClient.getFriendService().updateFriendNickname(myId, targetId, nickname);
 
                         if (ok) {
-                            // 1. Gửi thông báo hệ thống (Chỉ cần thiết cho nhóm)
-                            if (isGroup) {
-                                sendSystemNotification("đã đổi biệt danh thành: " + nickname);
-                            }
-
-                            // 2. Cập nhật giao diện Client ngay lập tức
+                            if (isGroup) sendSystemNotification("đã đổi biệt danh thành: " + nickname);
                             Platform.runLater(() -> {
-                                // Nếu là 1-1, cập nhật tên hiển thị của người đang chat
                                 if (!isGroup) {
                                     currentUser.setDisplayName(nickname);
-                                    nameLabel.setText(nickname); // Cập nhật Label tên bên phải
-
-                                    // Cập nhật Header ở giữa (MainController)
+                                    nameLabel.setText(nickname);
                                     if (mainController != null) {
                                         mainController.currentChatTitle.setText(nickname);
-                                        // Force refresh list bên trái để hiện tên mới
                                         mainController.getContactManager().loadFriendListInitial();
                                     }
-                                } else {
-                                    // Nếu là nhóm, refresh list thành viên
-                                    checkAdminStatus();
-                                }
-
+                                } else checkAdminStatus();
                                 new Alert(Alert.AlertType.INFORMATION, "Đổi biệt danh thành công!").show();
                             });
-                        } else {
-                            Platform.runLater(() -> new Alert(Alert.AlertType.ERROR, "Lỗi lưu biệt danh!").show());
                         }
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
+                    } catch (Exception e) { e.printStackTrace(); }
                 }).start();
             }
         });
@@ -258,24 +185,18 @@ public class ChatInfoController {
     @FXML
     public void handleViewPinnedMessages() {
         if (currentUser == null) return;
-
-        // 1. Setup UI Dialog
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setTitle("Tin nhắn đã ghim");
         alert.setHeaderText("Danh sách tin nhắn quan trọng");
-
         ListView<MessageDTO> listView = new ListView<>();
         listView.setPrefSize(400, 300);
         listView.setPlaceholder(new Label("Đang tải dữ liệu..."));
-
-        // Setup Cell hiển thị
         listView.setCellFactory(param -> new ListCell<>() {
             @Override
             protected void updateItem(MessageDTO item, boolean empty) {
                 super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setGraphic(null);
-                } else {
+                if (empty || item == null) setGraphic(null);
+                else {
                     VBox vBox = new VBox(3);
                     Label sender = new Label(item.getSenderName());
                     sender.setStyle("-fx-font-weight: bold; -fx-text-fill: #2980b9;");
@@ -283,66 +204,30 @@ public class ChatInfoController {
                     content.setStyle("-fx-text-fill: #333;");
                     content.setWrapText(true);
                     content.setMaxWidth(360);
-
                     vBox.getChildren().addAll(sender, content);
                     setGraphic(vBox);
                 }
             }
         });
-
-        // Sự kiện click để cuộn tới tin nhắn
         listView.setOnMouseClicked(e -> {
             MessageDTO selected = listView.getSelectionModel().getSelectedItem();
-            if (selected != null && mainController != null) {
-                mainController.scrollToMessage(selected.getUuid());
-            }
+            if (selected != null && mainController != null) mainController.scrollToMessage(selected.getUuid());
         });
-
         alert.getDialogPane().setContent(listView);
         alert.show();
-
-        // 2. [QUAN TRỌNG] Logic lấy dữ liệu trong luồng riêng
         new Thread(() -> {
             try {
                 long targetConversationId;
-
-                // --- BẮT ĐẦU ĐOẠN SỬA LỖI ---
-                if ("GROUP".equals(currentUser.getUsername())) {
-                    // Nếu là Nhóm: ID Group chính là Conversation ID
-                    targetConversationId = currentUser.getId();
-                } else {
-                    // Nếu là P2P: Phải hỏi Server xem 2 người này chat ở Conversation số mấy
-                    long myId = SessionStore.currentUser.getId();
-                    long friendId = currentUser.getId();
-
-                    // Gọi hàm này để lấy số "5" như trong DB của bạn
-                    targetConversationId = RmiClient.getMessageService().getPrivateConversationId(myId, friendId);
-                }
-
-                // IN RA LOG ĐỂ KIỂM TRA (Nhìn vào tab Run/Console của IntelliJ)
-                System.out.println("DEBUG: Đang lấy tin ghim của Conversation ID = " + targetConversationId);
-                // -----------------------------
-
-                // 3. Gọi Server lấy danh sách
+                if ("GROUP".equals(currentUser.getUsername())) targetConversationId = currentUser.getId();
+                else targetConversationId = RmiClient.getMessageService().getPrivateConversationId(SessionStore.currentUser.getId(), currentUser.getId());
                 List<MessageDTO> pinnedMsgs = RmiClient.getMessageService().getPinnedMessages(targetConversationId);
-
-                System.out.println("DEBUG: Tìm thấy " + pinnedMsgs.size() + " tin nhắn ghim.");
-
                 Platform.runLater(() -> {
-                    if (pinnedMsgs.isEmpty()) {
-                        listView.setPlaceholder(new Label("Chưa có tin nhắn nào được ghim."));
-                    } else {
-                        listView.getItems().setAll(pinnedMsgs);
-                    }
+                    if (pinnedMsgs.isEmpty()) listView.setPlaceholder(new Label("Chưa có tin nhắn nào được ghim."));
+                    else listView.getItems().setAll(pinnedMsgs);
                 });
-            } catch (Exception e) {
-                e.printStackTrace();
-                Platform.runLater(() -> listView.setPlaceholder(new Label("Lỗi tải dữ liệu: " + e.getMessage())));
-            }
+            } catch (Exception e) { e.printStackTrace(); }
         }).start();
     }
-
-    // --- CÁC HÀM HELPER VÀ XỬ LÝ SỰ KIỆN CŨ ---
 
     private void loadAvatar(String url) {
         avatarView.setImage(null);
@@ -370,9 +255,7 @@ public class ChatInfoController {
                 List<UserDTO> members = RmiClient.getGroupService().getGroupMembers(currentUser.getId());
                 long myId = SessionStore.currentUser.getId();
                 UserDTO meInGroup = members.stream().filter(u -> u.getId() == myId).findFirst().orElse(null);
-
                 amIAdmin = (meInGroup != null && meInGroup.isAdmin());
-
                 Platform.runLater(() -> updateAdminUI(members));
             } catch (Exception e) { e.printStackTrace(); }
         }).start();
@@ -383,43 +266,26 @@ public class ChatInfoController {
             memberListView.getItems().setAll(members);
             memberListView.setCellFactory(param -> new MemberListCell());
         }
-
-        // Hiện/Ẩn vùng Admin Controls
-        if (adminControls != null) {
-            adminControls.setVisible(amIAdmin);
-            adminControls.setManaged(amIAdmin);
-        }
-
-        // Nút đổi ảnh trên Avatar
-        if (changeAvatarBtn != null) {
-            changeAvatarBtn.setVisible(amIAdmin);
-            changeAvatarBtn.setManaged(amIAdmin);
-        }
+        if (adminControls != null) { adminControls.setVisible(amIAdmin); adminControls.setManaged(amIAdmin); }
+        if (changeAvatarBtn != null) { changeAvatarBtn.setVisible(amIAdmin); changeAvatarBtn.setManaged(amIAdmin); }
     }
 
-    // Class cell tùy chỉnh để hiển thị thành viên đẹp hơn
     private class MemberListCell extends ListCell<UserDTO> {
         @Override
         protected void updateItem(UserDTO item, boolean empty) {
             super.updateItem(item, empty);
-            if (empty || item == null) {
-                setGraphic(null);
-            } else {
+            if (empty || item == null) setGraphic(null);
+            else {
                 HBox box = new HBox(10);
                 box.setPadding(new Insets(5));
                 box.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-
                 String role = item.isAdmin() ? " (Trưởng nhóm)" : "";
                 Label name = new Label(item.getDisplayName() + role);
-
                 if (item.isAdmin()) name.setStyle("-fx-font-weight: bold; -fx-text-fill: #0084ff;");
                 else name.setStyle("-fx-text-fill: #333;");
-
                 Region spacer = new Region();
                 HBox.setHgrow(spacer, Priority.ALWAYS);
                 box.getChildren().addAll(name, spacer);
-
-                // Nút kick (Chỉ hiện nếu mình là Admin và không kick chính mình)
                 if (amIAdmin && item.getId() != SessionStore.currentUser.getId()) {
                     Button kickBtn = new Button("❌");
                     kickBtn.setStyle("-fx-background-color: transparent; -fx-text-fill: red; -fx-cursor: hand; -fx-font-size: 10px;");
@@ -427,16 +293,11 @@ public class ChatInfoController {
                     kickBtn.setOnAction(e -> handleKickMember(item));
                     box.getChildren().add(kickBtn);
                 }
-
-                if (item.getId() == SessionStore.currentUser.getId()) {
-                    name.setText(name.getText() + " (Bạn)");
-                }
+                if (item.getId() == SessionStore.currentUser.getId()) name.setText(name.getText() + " (Bạn)");
                 setGraphic(box);
             }
         }
     }
-
-    // --- CÁC HÀM XỬ LÝ HÀNH ĐỘNG (ADD, KICK, LEAVE, RENAME...) ---
 
     @FXML
     public void handleAddMember() {
@@ -444,27 +305,21 @@ public class ChatInfoController {
         dialog.setTitle("Thêm thành viên");
         dialog.setHeaderText("Nhập Username người cần thêm:");
         dialog.setContentText("Username:");
-
         dialog.showAndWait().ifPresent(username -> {
             new Thread(() -> {
                 try {
                     List<UserDTO> searchResult = RmiClient.getFriendService().searchUsers(username);
                     UserDTO target = searchResult.stream().filter(u -> u.getUsername().equals(username)).findFirst().orElse(null);
-
                     if (target != null) {
                         boolean ok = RmiClient.getGroupService().addMemberToGroup(currentUser.getId(), target.getId());
                         Platform.runLater(() -> {
                             if (ok) {
                                 sendSystemNotification("đã thêm " + target.getDisplayName() + " vào nhóm.");
-                                checkAdminStatus(); // Refresh list
+                                checkAdminStatus();
                                 new Alert(Alert.AlertType.INFORMATION, "Đã thêm thành công!").show();
-                            } else {
-                                new Alert(Alert.AlertType.ERROR, "Người này đã ở trong nhóm hoặc có lỗi xảy ra!").show();
-                            }
+                            } else new Alert(Alert.AlertType.ERROR, "Người này đã ở trong nhóm hoặc có lỗi xảy ra!").show();
                         });
-                    } else {
-                        Platform.runLater(() -> new Alert(Alert.AlertType.ERROR, "Không tìm thấy người dùng: " + username).show());
-                    }
+                    } else Platform.runLater(() -> new Alert(Alert.AlertType.ERROR, "Không tìm thấy người dùng: " + username).show());
                 } catch (Exception e) { e.printStackTrace(); }
             }).start();
         });
@@ -476,14 +331,10 @@ public class ChatInfoController {
             if (type == ButtonType.OK) {
                 new Thread(() -> {
                     try {
-                        boolean ok = RmiClient.getGroupService().removeMemberFromGroup(
-                                SessionStore.currentUser.getId(),
-                                currentUser.getId(),
-                                target.getId()
-                        );
+                        boolean ok = RmiClient.getGroupService().removeMemberFromGroup(SessionStore.currentUser.getId(), currentUser.getId(), target.getId());
                         if (ok) {
                             sendSystemNotification("đã mời " + target.getDisplayName() + " ra khỏi nhóm.");
-                            checkAdminStatus(); // Refresh list
+                            checkAdminStatus();
                         }
                     } catch (Exception e) { e.printStackTrace(); }
                 }).start();
@@ -497,14 +348,11 @@ public class ChatInfoController {
         TextInputDialog dialog = new TextInputDialog(currentName);
         dialog.setTitle("Đổi tên nhóm");
         dialog.setHeaderText("Nhập tên nhóm mới:");
-
         dialog.showAndWait().ifPresent(newName -> {
             if(!newName.trim().isEmpty()){
                 new Thread(() -> {
                     try {
-                        boolean ok = RmiClient.getGroupService().updateGroupInfo(
-                                SessionStore.currentUser.getId(), currentUser.getId(), newName, null
-                        );
+                        boolean ok = RmiClient.getGroupService().updateGroupInfo(SessionStore.currentUser.getId(), currentUser.getId(), newName, null);
                         if (ok) {
                             sendSystemNotification("đã đổi tên nhóm thành: " + newName);
                             Platform.runLater(() -> nameLabel.setText("[Nhóm] " + newName));
@@ -521,15 +369,12 @@ public class ChatInfoController {
         fc.setTitle("Chọn ảnh nhóm mới");
         fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Ảnh", "*.jpg", "*.png", "*.jpeg"));
         File file = fc.showOpenDialog(nameLabel.getScene().getWindow());
-
         if (file != null) {
             new Thread(() -> {
                 try {
                     byte[] fileData = Files.readAllBytes(file.toPath());
                     String serverPath = RmiClient.getMessageService().uploadFile(fileData, file.getName());
-                    boolean ok = RmiClient.getGroupService().updateGroupInfo(
-                            SessionStore.currentUser.getId(), currentUser.getId(), null, serverPath
-                    );
+                    boolean ok = RmiClient.getGroupService().updateGroupInfo(SessionStore.currentUser.getId(), currentUser.getId(), null, serverPath);
                     if (ok) {
                         sendSystemNotification("đã thay đổi ảnh nhóm.");
                         loadAvatar(serverPath);
@@ -549,9 +394,7 @@ public class ChatInfoController {
                         sendSystemNotification("đã giải tán nhóm.");
                         boolean ok = RmiClient.getGroupService().dissolveGroup(SessionStore.currentUser.getId(), currentUser.getId());
                         Platform.runLater(() -> {
-                            if (ok && mainController != null) {
-                                mainController.handleGroupLeft(currentUser.getId());
-                            }
+                            if (ok && mainController != null) mainController.handleGroupLeft(currentUser.getId());
                         });
                     } catch (Exception e) { e.printStackTrace(); }
                 }).start();
@@ -565,7 +408,6 @@ public class ChatInfoController {
         alert.setTitle("Rời nhóm");
         alert.setHeaderText("Bạn có chắc muốn rời nhóm?");
         alert.setContentText("Bạn sẽ không nhận được tin nhắn mới từ nhóm này.");
-
         alert.showAndWait().ifPresent(type -> {
             if (type == ButtonType.OK) {
                 new Thread(() -> {
@@ -573,9 +415,7 @@ public class ChatInfoController {
                         sendSystemNotification("đã rời khỏi nhóm.");
                         boolean ok = RmiClient.getGroupService().leaveGroup(SessionStore.currentUser.getId(), currentUser.getId());
                         Platform.runLater(() -> {
-                            if (ok && mainController != null) {
-                                mainController.handleGroupLeft(currentUser.getId());
-                            }
+                            if (ok && mainController != null) mainController.handleGroupLeft(currentUser.getId());
                         });
                     } catch (Exception e) { e.printStackTrace(); }
                 }).start();
@@ -593,65 +433,10 @@ public class ChatInfoController {
         msg.setContent(SessionStore.currentUser.getDisplayName() + " " + actionText);
         mainController.getChatManager().sendP2PMessage(msg);
     }
-    // --- [MỚI] XỬ LÝ KHO LƯU TRỮ (MEDIA & FILES) ---
 
-    @FXML
-    public void handleViewMedia() {
-        // Mở popup hiển thị danh sách ảnh đã gửi trong nhóm
-        showStoragePopup("Kho Ảnh", MessageDTO.MessageType.IMAGE);
-    }
-
-    @FXML
-    public void handleViewFiles() {
-        // Mở popup hiển thị danh sách tài liệu đã gửi
-        showStoragePopup("Kho Tài Liệu", MessageDTO.MessageType.FILE);
-    }
-
-    private void showStoragePopup(String title, MessageDTO.MessageType type) {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle(title);
-        alert.setHeaderText("Danh sách " + title);
-
-        ListView<String> listView = new ListView<>();
-        listView.setPrefHeight(300);
-        listView.setPrefWidth(300);
-
-        // Tạo label thông báo đang tải
-        listView.setPlaceholder(new Label("Đang tải dữ liệu..."));
-
-        alert.getDialogPane().setContent(listView);
-        alert.show(); // Hiển thị khung trước
-
-        // Gọi Server lấy danh sách file chạy ngầm
-        new Thread(() -> {
-            try {
-                // Giả định bạn sẽ viết thêm hàm getSharedFiles ở Server
-                // List<MessageDTO> files = RmiClient.getMessageService().getSharedFiles(currentUser.getId(), type);
-
-                // [DEMO] Tạm thời hiển thị dữ liệu giả để bạn test giao diện
-                Platform.runLater(() -> {
-                    if (type == MessageDTO.MessageType.IMAGE) {
-                        listView.getItems().addAll("📷 ảnh_đi_chơi.png", "📷 screenshot_lỗi.jpg", "📷 avatar_cũ.jpg");
-                    } else {
-                        listView.getItems().addAll("📄 bao_cao_nhom.pdf", "📄 do_an_java.docx", "📄 slide_thuyet_trinh.pptx");
-                    }
-
-                    // Logic click vào item để tải xuống
-                    listView.setOnMouseClicked(e -> {
-                        String selected = listView.getSelectionModel().getSelectedItem();
-                        if (selected != null) {
-                            // Gọi hàm tải file (đã có logic trong ChatUIHelper)
-                            System.out.println("Đang tải: " + selected);
-                        }
-                    });
-                });
-            } catch (Exception e) { e.printStackTrace(); }
-        }).start();
-    }
     @FXML
     public void handleSearchMessage() {
         if (mainController != null) {
-            // Gọi sang MainController để bật thanh tìm kiếm
             mainController.toggleSearchMessage();
         }
     }

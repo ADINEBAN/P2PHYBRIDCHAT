@@ -5,6 +5,7 @@ import com.example.client.store.SessionStore;
 import com.example.common.dto.MessageDTO;
 import com.example.common.dto.UserDTO;
 import javafx.application.Platform;
+import javafx.collections.ObservableList;
 
 import java.util.List;
 import java.util.Map;
@@ -22,95 +23,135 @@ public class ContactManager {
                 List<UserDTO> friends = RmiClient.getFriendService().getFriendList(SessionStore.currentUser.getId());
                 Map<Long, Integer> unreadMap = RmiClient.getMessageService().getUnreadCounts(SessionStore.currentUser.getId());
                 for (UserDTO u : friends) {
-                    if (unreadMap.containsKey(u.getId())) u.setUnreadCount(unreadMap.get(u.getId()));
+                    if (unreadMap.containsKey(u.getId())) {
+                        u.setUnreadCount(unreadMap.get(u.getId()));
+                    }
                 }
                 Platform.runLater(() -> {
-                    mc.conversationList.getItems().clear();
-                    mc.conversationList.getItems().addAll(friends);
+                    // Thao tác trên masterData
+                    mc.getMasterData().clear();
+                    mc.getMasterData().addAll(friends);
                 });
             } catch (Exception e) { e.printStackTrace(); }
         }).start();
     }
 
     public void updateFriendInList(UserDTO updatedFriend) {
-        boolean found = false;
-        for (int i = 0; i < mc.conversationList.getItems().size(); i++) {
-            UserDTO u = mc.conversationList.getItems().get(i);
-            if (u.getId() == updatedFriend.getId()) {
-                u.setOnline(updatedFriend.isOnline());
-                u.setLastIp(updatedFriend.getLastIp());
-                u.setLastPort(updatedFriend.getLastPort());
-                if (updatedFriend.getAvatarUrl() != null) u.setAvatarUrl(updatedFriend.getAvatarUrl());
-                if (updatedFriend.getStatusMsg() != null) u.setStatusMsg(updatedFriend.getStatusMsg());
-                found = true;
-                mc.conversationList.getItems().set(i, u);
-                if (mc.currentChatUser != null && mc.currentChatUser.getId() == updatedFriend.getId()) {
-                    mc.currentChatUser = u;
+        Platform.runLater(() -> {
+            boolean found = false;
+            // [FIX] Dùng masterData
+            ObservableList<UserDTO> masterList = mc.getMasterData();
+
+            for (int i = 0; i < masterList.size(); i++) {
+                UserDTO u = masterList.get(i);
+                if (u.getId() == updatedFriend.getId()) {
+                    u.setOnline(updatedFriend.isOnline());
+                    u.setLastIp(updatedFriend.getLastIp());
+                    u.setLastPort(updatedFriend.getLastPort());
+                    if (updatedFriend.getAvatarUrl() != null) u.setAvatarUrl(updatedFriend.getAvatarUrl());
+                    if (updatedFriend.getDisplayName() != null) u.setDisplayName(updatedFriend.getDisplayName());
+                    if (updatedFriend.getStatusMsg() != null) u.setStatusMsg(updatedFriend.getStatusMsg());
+
+                    found = true;
+                    masterList.set(i, u);
+
+                    if (mc.currentChatUser != null && mc.currentChatUser.getId() == updatedFriend.getId()) {
+                        mc.currentChatUser = u;
+                    }
+                    break;
                 }
-                break;
             }
-        }
-        if (!found) mc.conversationList.getItems().add(0, updatedFriend);
-        mc.conversationList.refresh();
+            if (!found) masterList.add(0, updatedFriend);
+        });
     }
 
     public void addFriendToListDirectly(UserDTO newFriend) {
-        Platform.runLater(() -> updateFriendInList(newFriend));
+        updateFriendInList(newFriend);
     }
 
+    // [HÀM GÂY LỖI - ĐÃ SỬA]
     public void moveUserToTop(MessageDTO msg) {
         Platform.runLater(() -> {
-            UserDTO targetUser = null;
-            int index = -1;
-            UserDTO currentSelection = mc.conversationList.getSelectionModel().getSelectedItem();
+            // [FIX QUAN TRỌNG] Lấy danh sách gốc (masterData) để thao tác xóa/thêm
+            // Tuyệt đối không dùng mc.conversationList.getItems() ở đây vì nó là FilteredList
+            ObservableList<UserDTO> masterList = mc.getMasterData();
 
-            for (int i = 0; i < mc.conversationList.getItems().size(); i++) {
-                UserDTO u = mc.conversationList.getItems().get(i);
+            UserDTO targetUser = null;
+            UserDTO currentSelection = mc.conversationList.getSelectionModel().getSelectedItem();
+            int indexToRemove = -1;
+
+            // 1. Tìm vị trí trong masterList
+            for (int i = 0; i < masterList.size(); i++) {
+                UserDTO u = masterList.get(i);
                 boolean match = false;
                 if ("GROUP".equals(u.getUsername())) {
                     if (u.getId() == msg.getConversationId()) match = true;
                 } else {
-                    if (u.getId() == msg.getSenderId()) match = true;
-                    if (u.getId() == msg.getConversationId() && msg.getSenderId() == SessionStore.currentUser.getId()) match = true;
+                    long partnerId = (msg.getSenderId() == SessionStore.currentUser.getId())
+                            ? msg.getConversationId()
+                            : msg.getSenderId();
+                    if (u.getId() == partnerId) match = true;
+                    // Fallback check
+                    if (!match && (u.getId() == msg.getSenderId() || u.getId() == msg.getConversationId())) {
+                        if (!"GROUP".equals(u.getUsername())) match = true;
+                    }
                 }
+
                 if (match) {
                     targetUser = u;
-                    index = i;
+                    indexToRemove = i; // Lưu lại index để xóa
                     break;
                 }
             }
 
-            if (targetUser != null && index != -1) {
+            // 2. Thực hiện xóa và thêm lại vào đầu
+            if (targetUser != null && indexToRemove != -1) {
                 boolean isChattingWithThis = (mc.currentChatUser != null && mc.currentChatUser.getId() == targetUser.getId());
                 if (!isChattingWithThis && msg.getSenderId() != SessionStore.currentUser.getId()) {
                     targetUser.setUnreadCount(targetUser.getUnreadCount() + 1);
                 }
 
+                // Cập nhật preview tin nhắn
+                if (msg.getType() == MessageDTO.MessageType.IMAGE) targetUser.setLastMessage("[Hình ảnh]");
+                else if (msg.getType() == MessageDTO.MessageType.FILE) targetUser.setLastMessage("[Tập tin]");
+                else if (msg.getType() == MessageDTO.MessageType.AUDIO) targetUser.setLastMessage("[Tin nhắn thoại]");
+                else targetUser.setLastMessage(msg.getContent());
+
                 mc.isUpdatingList = true;
                 try {
-                    mc.conversationList.getItems().remove(index);
-                    mc.conversationList.getItems().add(0, targetUser);
+                    // [FIX] Xóa trên masterList -> Hết lỗi UnsupportedOperationException
+                    masterList.remove(indexToRemove);
+                    masterList.add(0, targetUser);
+
+                    // Khôi phục vùng chọn
                     if (currentSelection != null) {
-                        mc.conversationList.getSelectionModel().select(currentSelection);
+                        if(mc.currentChatUser != null && mc.currentChatUser.getId() == currentSelection.getId()) {
+                            mc.conversationList.getSelectionModel().select(targetUser);
+                        } else {
+                            mc.conversationList.getSelectionModel().select(currentSelection);
+                        }
                     } else {
                         mc.conversationList.getSelectionModel().clearSelection();
                     }
                 } finally {
                     mc.isUpdatingList = false;
                 }
-                mc.conversationList.refresh();
-                mc.conversationList.scrollTo(0);
+
+                if(mc.conversationList != null) mc.conversationList.scrollTo(0);
             }
         });
     }
+
     public void removeConversation(long id) {
         Platform.runLater(() -> {
-            mc.conversationList.getItems().removeIf(u -> u.getId() == id);
-            mc.conversationList.refresh();
+            // [FIX] Dùng masterData
+            mc.getMasterData().removeIf(u -> u.getId() == id);
         });
     }
+
     public UserDTO findUserInList(long userId) {
-        for (UserDTO u : mc.conversationList.getItems()) {
+        // [FIX] Dùng masterData
+        for (UserDTO u : mc.getMasterData()) {
             if (u.getId() == userId) return u;
         }
         return null;

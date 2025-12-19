@@ -8,6 +8,9 @@ import com.example.client.util.EmojiHandler;
 import com.example.common.dto.MessageDTO;
 import com.example.common.dto.UserDTO;
 import javafx.application.Platform;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.collections.transformation.FilteredList;
 import javafx.fxml.FXML;
 import javafx.scene.Node;
 import javafx.scene.control.*;
@@ -15,13 +18,14 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.StackPane; // [MỚI] Import StackPane
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
 
 import java.io.ByteArrayInputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class MainController {
@@ -30,20 +34,35 @@ public class MainController {
     @FXML public BorderPane mainBorderPane;
     @FXML public Label myDisplayName;
     @FXML public ImageView myAvatarView;
-    @FXML public ListView<UserDTO> conversationList;
-    @FXML public VBox chatArea, welcomeArea, msgContainer;
 
+    // [SỬA LỖI] Dùng đúng tên biến khớp với fx:id trong FXML
+    @FXML public ListView<UserDTO> conversationList;
+
+    // Ô tìm kiếm bạn bè (Sidebar trái)
+    @FXML private TextField txtSearchFriend;
+
+    @FXML public VBox chatArea, welcomeArea, msgContainer;
     @FXML public Label currentChatTitle;
     @FXML public TextField inputField;
     @FXML public ScrollPane msgScrollPane;
     @FXML public Button micBtn;
     @FXML public Button emojiBtn;
-    @FXML public TextField searchMsgField;
-    // [QUAN TRỌNG] Liên kết với ChatInfoController (bên phải)
-    @FXML private ChatInfoController chatInfoController;
 
-    // [MỚI] Container chứa thanh bên phải (để Bật/Tắt)
+    // Thanh tìm kiếm tin nhắn (Sidebar phải hoặc Popup)
+    @FXML public TextField searchMsgField;
+
+    // Controller Sidebar phải
+    @FXML private ChatInfoController chatInfoController;
     @FXML private StackPane infoSidebarContainer;
+
+    // --- [MỚI] SEARCH CONTROL (Tìm trong đoạn chat) ---
+    @FXML private Label lblSearchCount; // Hiển thị "2/5"
+    @FXML private Button btnSearchUp;   // Nút mũi tên lên
+    @FXML private Button btnSearchDown; // Nút mũi tên xuống
+
+    // Biến lưu trữ logic tìm kiếm tin nhắn
+    private List<Node> searchMatches = new ArrayList<>();
+    private int currentSearchIndex = -1;
 
     // --- DATA FIELDS ---
     public P2PClient p2pClient;
@@ -51,6 +70,10 @@ public class MainController {
     public long activeConversationId = -1;
     public boolean isUpdatingList = false;
     public final Map<String, VBox> messageUiMap = new HashMap<>();
+
+    // --- LIST DATA (QUẢN LÝ DANH SÁCH BẠN BÈ) ---
+    private ObservableList<UserDTO> masterData = FXCollections.observableArrayList();
+    private FilteredList<UserDTO> filteredData;
 
     // --- MANAGERS ---
     private ChatManager chatManager;
@@ -61,81 +84,256 @@ public class MainController {
 
     @FXML
     public void initialize() {
-        // 1. Khởi tạo các Manager
+        // 1. Khởi tạo Managers
         this.contactManager = new ContactManager(this);
         this.chatManager = new ChatManager(this);
         this.callHandler = new CallHandler(this);
         this.navigationHandler = new NavigationHandler(this);
 
-        // 2. Setup UI cơ bản
-        conversationList.setCellFactory(param -> new FriendListCell());
-        ChatUIHelper.setMainController(this);
-
-        // [MỚI] Mặc định ẩn thanh thông tin bên phải đi (Để giao diện chỉ có 2 phần)
-        if (mainBorderPane != null) {
-            mainBorderPane.setRight(null);
+        // 2. Setup ChatInfoController
+        if (chatInfoController != null) {
+            chatInfoController.setMainController(this);
         }
 
-        // 3. Load thông tin User (Me)
+        // 3. [QUAN TRỌNG] Setup List Bạn Bè (Fix lỗi mất lịch sử)
+        setupFriendListSearch();
+
+        // 4. Setup UI Helpers
+        ChatUIHelper.setMainController(this);
+        if (mainBorderPane != null) {
+            mainBorderPane.setRight(null); // Mặc định ẩn sidebar phải
+        }
+
+        // 5. Load User Info
         UserDTO me = SessionStore.currentUser;
         if (me != null) {
             myDisplayName.setText(me.getDisplayName());
             loadMyAvatar(me.getAvatarUrl());
             startP2P();
-            contactManager.loadFriendListInitial();
+
+            // Tải danh sách bạn bè
+            loadFriendListToMaster();
+
             registerRealTimeUpdates();
         }
 
-        // 4. Xử lý sự kiện click vào List Conversation
+        // 6. Listener chuyển cuộc trò chuyện
         conversationList.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
-            if (!isUpdatingList && newVal != null) {
-                this.currentChatUser = newVal;
-                chatManager.switchChat(newVal);
-
-                new Thread(() -> {
-                    try {
-                        long conversationId;
-                        if ("GROUP".equals(newVal.getUsername())) {
-                            conversationId = newVal.getId();
-                        } else {
-                            long myId = SessionStore.currentUser.getId();
-                            conversationId = RmiClient.getMessageService().getPrivateConversationId(myId, newVal.getId());
-                        }
-
-                        // [MỚI - QUAN TRỌNG] Lưu lại ID để dùng cho Real-time
-                        this.activeConversationId = conversationId;
-
-                        // Lấy màu và áp dụng
-                        String themeColor = RmiClient.getMessageService().getConversationTheme(conversationId);
-                        Platform.runLater(() -> applyThemeColor(themeColor));
-
-                    } catch (Exception e) { e.printStackTrace(); }
-                }).start();
-                // ---------------------------------------
-
-                // C. Cập nhật thanh thông tin bên phải (nếu đang mở)
-                if (mainBorderPane.getRight() != null && chatInfoController != null) {
-                    chatInfoController.setUserInfo(newVal);
-                }
-            }
+            handleSwitchConversation(newVal);
         });
 
-        // 5. Xử lý sự kiện nút Emoji
+        // 7. Event Handlers
         if (emojiBtn != null) {
-            emojiBtn.setOnAction(e -> {
-                EmojiHandler.showEmojiPopup(emojiBtn, (emoji) -> {
-                    inputField.appendText(emoji);
-                });
-            });
+            emojiBtn.setOnAction(e -> EmojiHandler.showEmojiPopup(emojiBtn, (emoji) -> inputField.appendText(emoji)));
         }
+
+        // [QUAN TRỌNG] Logic Tìm kiếm tin nhắn (Scan & Scroll)
         if (searchMsgField != null) {
+            // Khi gõ chữ -> Quét và lưu vị trí, KHÔNG ẩn tin nhắn
             searchMsgField.textProperty().addListener((obs, oldVal, newVal) -> {
-                filterMessages(newVal);
+                executeSearch(newVal);
             });
         }
     }
 
-    // --- P2P & NETWORK SETUP ---
+    // --- [LOGIC 1] FIX LIST BẠN BÈ & TÌM BẠN ---
+    private void setupFriendListSearch() {
+        // Bọc masterData vào FilteredList
+        filteredData = new FilteredList<>(masterData, p -> true);
+
+        // Gán vào conversationList (ListView chính trong FXML)
+        conversationList.setItems(filteredData);
+        conversationList.setCellFactory(param -> new FriendListCell());
+
+        // Logic tìm kiếm bạn bè (Lọc danh sách bên trái)
+        if (txtSearchFriend != null) {
+            txtSearchFriend.textProperty().addListener((observable, oldValue, newValue) -> {
+                filteredData.setPredicate(user -> {
+                    if (newValue == null || newValue.isEmpty()) return true;
+                    String lower = newValue.toLowerCase();
+                    return user.getDisplayName().toLowerCase().contains(lower) ||
+                            user.getUsername().toLowerCase().contains(lower);
+                });
+            });
+        }
+    }
+
+    public void loadFriendListToMaster() {
+        new Thread(() -> {
+            try {
+                long myId = SessionStore.currentUser.getId();
+                List<UserDTO> friends = RmiClient.getFriendService().getFriendList(myId);
+                Platform.runLater(() -> {
+                    masterData.clear();
+                    if (friends != null) masterData.addAll(friends);
+                });
+            } catch (Exception e) { e.printStackTrace(); }
+        }).start();
+    }
+
+    // --- [LOGIC 2] TÌM KIẾM TIN NHẮN (SCAN & SCROLL) ---
+    private void executeSearch(String keyword) {
+        searchMatches.clear();
+        currentSearchIndex = -1;
+
+        // Reset highlight cũ
+        for (Node node : msgContainer.getChildren()) {
+            node.getStyleClass().remove("search-highlight");
+        }
+
+        if (keyword == null || keyword.trim().isEmpty()) {
+            if (lblSearchCount != null) lblSearchCount.setText("");
+            return;
+        }
+
+        String search = keyword.toLowerCase().trim();
+
+        // Quét toàn bộ dòng chat
+        for (Node node : msgContainer.getChildren()) {
+            boolean match = false;
+            Object data = node.getUserData();
+
+            // Kiểm tra dữ liệu được gắn trong ChatUIHelper
+            if (data instanceof MessageDTO) {
+                // Trường hợp lưu cả object (như Bước 1 mình vừa hướng dẫn)
+                String content = ((MessageDTO) data).getContent();
+                if (content != null && content.toLowerCase().contains(search)) {
+                    match = true;
+                }
+            } else if (data instanceof String) {
+                // Trường hợp cũ (lưu string) - Giữ lại để tương thích ngược
+                if (((String) data).contains(search)) {
+                    match = true;
+                }
+            }
+
+            if (match) {
+                searchMatches.add(node);
+            }
+        }
+
+        // Cập nhật kết quả
+        if (!searchMatches.isEmpty()) {
+            currentSearchIndex = searchMatches.size() - 1; // Nhảy tới tin mới nhất
+            navigateToMatch();
+        } else {
+            if (lblSearchCount != null) lblSearchCount.setText("0/0");
+        }
+    }
+
+    private void navigateToMatch() {
+        if (searchMatches.isEmpty() || currentSearchIndex < 0) return;
+
+        // Update Label đếm
+        if (lblSearchCount != null) {
+            lblSearchCount.setText((currentSearchIndex + 1) + "/" + searchMatches.size());
+        }
+
+        // Lấy Node đích
+        Node targetNode = searchMatches.get(currentSearchIndex);
+
+        // Tính toán Scroll
+        double contentHeight = msgContainer.getBoundsInLocal().getHeight();
+        double nodeY = targetNode.getBoundsInParent().getMinY();
+        double vValue = nodeY / contentHeight;
+
+        // Tinh chỉnh để tin nhắn nằm giữa view
+        double viewportHeight = msgScrollPane.getViewportBounds().getHeight();
+        if(contentHeight > viewportHeight) {
+            // Logic cuộn nâng cao để targetNode nằm giữa màn hình
+            double centerRatio = (nodeY - viewportHeight/2) / (contentHeight - viewportHeight);
+            // Giới hạn 0.0 -> 1.0
+            vValue = Math.max(0, Math.min(1, centerRatio));
+
+            // Fallback đơn giản nếu tính toán phức tạp lỗi:
+            vValue = nodeY / contentHeight;
+        }
+
+        msgScrollPane.setVvalue(vValue);
+
+        // Highlight
+        for (Node n : searchMatches) n.getStyleClass().remove("search-highlight");
+        targetNode.getStyleClass().add("search-highlight");
+    }
+
+    @FXML
+    public void handleSearchUp() {
+        if (searchMatches.isEmpty()) return;
+        currentSearchIndex--;
+        if (currentSearchIndex < 0) currentSearchIndex = searchMatches.size() - 1;
+        navigateToMatch();
+    }
+
+    @FXML
+    public void handleSearchDown() {
+        if (searchMatches.isEmpty()) return;
+        currentSearchIndex++;
+        if (currentSearchIndex >= searchMatches.size()) currentSearchIndex = 0;
+        navigateToMatch();
+    }
+
+    public void toggleSearchMessage() {
+        if (searchMsgField == null) return;
+
+        boolean isShow = !searchMsgField.isVisible();
+
+        // 1. Hiện ô nhập liệu
+        searchMsgField.setVisible(isShow);
+        searchMsgField.setManaged(isShow);
+
+        // 2. [QUAN TRỌNG] Hiện các nút điều hướng
+        if (btnSearchUp != null) {
+            btnSearchUp.setVisible(isShow);
+            btnSearchUp.setManaged(isShow); // <--- Dòng này giúp nút chiếm chỗ hiển thị
+        }
+        if (btnSearchDown != null) {
+            btnSearchDown.setVisible(isShow);
+            btnSearchDown.setManaged(isShow); // <--- Dòng này giúp nút chiếm chỗ hiển thị
+        }
+        if (lblSearchCount != null) {
+            lblSearchCount.setVisible(isShow);
+            lblSearchCount.setManaged(isShow); // <--- Dòng này giúp label chiếm chỗ hiển thị
+        }
+
+        if (isShow) {
+            searchMsgField.requestFocus();
+        } else {
+            searchMsgField.clear();
+            // Xóa highlight khi tắt
+            for (Node node : msgContainer.getChildren()) {
+                node.getStyleClass().remove("search-highlight");
+            }
+        }
+    }
+
+    // --- LOGIC CHUYỂN CHAT (GIỮ NGUYÊN) ---
+    private void handleSwitchConversation(UserDTO newVal) {
+        if (!isUpdatingList && newVal != null) {
+            this.currentChatUser = newVal;
+            chatManager.switchChat(newVal);
+
+            new Thread(() -> {
+                try {
+                    long conversationId;
+                    if ("GROUP".equals(newVal.getUsername())) {
+                        conversationId = newVal.getId();
+                    } else {
+                        long myId = SessionStore.currentUser.getId();
+                        conversationId = RmiClient.getMessageService().getPrivateConversationId(myId, newVal.getId());
+                    }
+                    this.activeConversationId = conversationId;
+                    String themeColor = RmiClient.getMessageService().getConversationTheme(conversationId);
+                    Platform.runLater(() -> applyThemeColor(themeColor));
+                } catch (Exception e) { e.printStackTrace(); }
+            }).start();
+
+            if (mainBorderPane.getRight() != null && chatInfoController != null) {
+                chatInfoController.setUserInfo(newVal);
+            }
+        }
+    }
+
+    // --- P2P & CÁC HÀM KHÁC (GIỮ NGUYÊN) ---
     private void startP2P() {
         p2pClient = new P2PClient(SessionStore.p2pPort, this::onMessageReceived);
         p2pClient.start();
@@ -148,72 +346,140 @@ public class MainController {
         } catch (Exception e) { e.printStackTrace(); }
     }
 
-    // --- HÀM NHẬN TIN NHẮN ---
     public void onMessageReceived(MessageDTO msg) {
         Platform.runLater(() -> {
             if (msg.getType() == MessageDTO.MessageType.CALL_REQ ||
                     msg.getType() == MessageDTO.MessageType.CALL_ACCEPT ||
                     msg.getType() == MessageDTO.MessageType.CALL_DENY ||
                     msg.getType() == MessageDTO.MessageType.CALL_END) {
-
                 callHandler.handleCallSignal(msg);
-
             } else {
                 chatManager.handleIncomingMessage(msg);
-
-                if (msg.getContent() != null) {
-                    if (msg.getContent().contains("đã đổi tên nhóm") || msg.getContent().contains("đã thay đổi ảnh")) {
-                        new Thread(() -> {
-                            try {
-                                UserDTO updatedGroup = RmiClient.getDirectoryService().getUserInfo(msg.getConversationId());
-                                if (updatedGroup != null) {
-                                    Platform.runLater(() -> updateFriendInList(updatedGroup));
-                                }
-                            } catch (Exception e) { e.printStackTrace(); }
-                        }).start();
-                    }
-                    if (msg.getContent().contains("đã giải tán nhóm")) {
-                        handleGroupLeft(msg.getConversationId());
-                    }
+                if (msg.getContent() != null && (msg.getContent().contains("đã đổi tên") || msg.getContent().contains("ảnh"))) {
+                    loadFriendListToMaster();
+                }
+                if (msg.getContent() != null && msg.getContent().contains("đã giải tán nhóm")) {
+                    handleGroupLeft(msg.getConversationId());
                 }
             }
         });
     }
 
-    // --- DELEGATE METHODS ---
+    // --- HELPERS ---
+    public void applyThemeColor(String hexColor) {
+        if (chatArea != null && hexColor != null && !hexColor.isEmpty()) {
+            chatArea.setStyle("-fx-background-color: " + hexColor + ";");
+        }
+    }
+
+    public void scrollToMessage(String uuid) {
+        VBox bubble = messageUiMap.get(uuid);
+        if (bubble != null) {
+            Node row = bubble.getParent().getParent().getParent();
+            if (row != null) {
+                double contentHeight = msgContainer.getBoundsInLocal().getHeight();
+                double nodeY = row.getBoundsInParent().getMinY();
+                msgScrollPane.setVvalue(nodeY / contentHeight);
+            }
+            Platform.runLater(() -> {
+                bubble.getStyleClass().add("highlight-bubble");
+                new Thread(() -> {
+                    try { Thread.sleep(2000); } catch (Exception e) {}
+                    Platform.runLater(() -> bubble.getStyleClass().remove("highlight-bubble"));
+                }).start();
+            });
+        }
+    }
+
+    // --- DELEGATE ACTIONS ---
+    @FXML public void handleToggleInfo() {
+        if (mainBorderPane.getRight() == null) {
+            mainBorderPane.setRight(infoSidebarContainer);
+            if (currentChatUser != null && chatInfoController != null) chatInfoController.setUserInfo(currentChatUser);
+        } else {
+            mainBorderPane.setRight(null);
+        }
+    }
+
     @FXML public void handleSend() { chatManager.handleSend(); }
     @FXML public void handleSendFile() { chatManager.handleSendFile(); }
     @FXML public void startRecording(MouseEvent event) { chatManager.startRecording(event); }
     @FXML public void stopAndSendAudio(MouseEvent event) { chatManager.stopAndSendAudio(event); }
-
     @FXML public void handleVoiceCall() { callHandler.handleVoiceCall(); }
-
     @FXML public void handleCreateGroup() { navigationHandler.handleCreateGroup(); }
     @FXML public void handleAddFriend() { navigationHandler.handleAddFriend(); }
     @FXML public void handleShowRequests() { navigationHandler.handleShowRequests(); }
     @FXML public void handleOpenProfile() { navigationHandler.handleOpenProfile(); }
 
-    // [MỚI] Xử lý Bật/Tắt thanh thông tin (Sidebar phải)
-    @FXML
-    public void handleToggleInfo() {
-        // Kiểm tra xem cột phải đang hiện hay ẩn
-        if (mainBorderPane.getRight() == null) {
-            // Nếu đang ẩn -> Hiện nó ra
-            mainBorderPane.setRight(infoSidebarContainer);
+    public void handleEditAction(MessageDTO msg) { chatManager.handleEditAction(msg); }
+    public void handleRecallAction(MessageDTO msg) { chatManager.handleRecallAction(msg); }
 
-            // Cập nhật thông tin ngay lập tức
-            if (currentChatUser != null && chatInfoController != null) {
-                chatInfoController.setUserInfo(currentChatUser);
+    public void handleDeleteForMeAction(MessageDTO msg) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION, "Xóa tin nhắn ở phía bạn?");
+        alert.showAndWait().ifPresent(type -> {
+            if (type == ButtonType.OK) {
+                new Thread(() -> {
+                    try {
+                        if (RmiClient.getMessageService().deleteMessageForUser(SessionStore.currentUser.getId(), msg.getId())) {
+                            Platform.runLater(() -> {
+                                VBox bubble = messageUiMap.get(msg.getUuid());
+                                if (bubble != null) {
+                                    Node nodeToDelete = bubble;
+                                    while (nodeToDelete.getParent() != null && nodeToDelete.getParent() != msgContainer) {
+                                        nodeToDelete = nodeToDelete.getParent();
+                                    }
+                                    if(nodeToDelete != null) {
+                                        msgContainer.getChildren().remove(nodeToDelete);
+                                        messageUiMap.remove(msg.getUuid());
+                                    }
+                                }
+                            });
+                        }
+                    } catch (Exception e) { e.printStackTrace(); }
+                }).start();
             }
-        } else {
-            // Nếu đang hiện -> Ẩn nó đi
-            mainBorderPane.setRight(null);
+        });
+    }
+
+    public void handlePinAction(MessageDTO msg) {
+        new Thread(() -> {
+            try {
+                boolean newStatus = !msg.isPinned();
+                if (RmiClient.getMessageService().pinMessage(msg.getId(), newStatus)) {
+                    Platform.runLater(() -> {
+                        msg.setPinned(newStatus);
+                        new Alert(Alert.AlertType.INFORMATION, newStatus ? "Đã ghim!" : "Đã bỏ ghim!").show();
+                    });
+                }
+            } catch (Exception e) { e.printStackTrace(); }
+        }).start();
+    }
+
+    public void handleRemoteMessageUpdate(String uuid, String actionType) {
+        VBox bubble = messageUiMap.get(uuid);
+        if (bubble != null) {
+            boolean isPinned = "PIN".equals(actionType);
+            if (isPinned && !bubble.getStyleClass().contains("pinned-bubble")) {
+                bubble.getStyleClass().add("pinned-bubble");
+            } else if (!isPinned) {
+                bubble.getStyleClass().remove("pinned-bubble");
+            }
+            if (bubble.getUserData() instanceof MessageDTO) {
+                ((MessageDTO) bubble.getUserData()).setPinned(isPinned);
+            }
         }
     }
 
-    // --- HELPER METHODS ---
-    public void handleEditAction(MessageDTO msg) { chatManager.handleEditAction(msg); }
-    public void handleRecallAction(MessageDTO msg) { chatManager.handleRecallAction(msg); }
+    public void handleGroupLeft(long groupId) {
+        Platform.runLater(() -> masterData.removeIf(u -> u.getId() == groupId));
+        if (activeConversationId == groupId) {
+            welcomeArea.setVisible(true);
+            chatArea.setVisible(false);
+            currentChatUser = null;
+            activeConversationId = -1;
+            mainBorderPane.setRight(null);
+        }
+    }
 
     public void loadMyAvatar(String url) {
         if (url == null || url.isEmpty()) return;
@@ -225,225 +491,114 @@ public class MainController {
                     Platform.runLater(() -> {
                         myAvatarView.setImage(img);
                         double r = myAvatarView.getFitWidth() / 2;
-                        Circle clip = new Circle(r, r, r);
-                        myAvatarView.setClip(clip);
+                        myAvatarView.setClip(new Circle(r, r, r));
                     });
                 }
             } catch (Exception e) {}
         }).start();
     }
 
-    public void handleGroupLeft(long groupId) {
-        getContactManager().removeConversation(groupId);
-        if (activeConversationId == groupId) {
-            welcomeArea.setVisible(true);
-            chatArea.setVisible(false);
-            currentChatUser = null;
-            activeConversationId = -1;
-            mainBorderPane.setRight(null);
-        }
-        Alert a = new Alert(Alert.AlertType.INFORMATION, "Nhóm đã giải tán hoặc bạn đã rời nhóm.");
-        a.show();
-    }
-
     public void refreshProfileUI() {
         myDisplayName.setText(SessionStore.currentUser.getDisplayName());
         loadMyAvatar(SessionStore.currentUser.getAvatarUrl());
     }
+    public void updateFriendInList(UserDTO updatedFriend) {
+        Platform.runLater(() -> {
+            boolean found = false;
+            for (int i = 0; i < masterData.size(); i++) {
+                UserDTO current = masterData.get(i);
+                if (current.getId() == updatedFriend.getId()) {
+                    // 1. Cập nhật trạng thái mạng (Cái này luôn cần mới nhất)
+                    current.setOnline(updatedFriend.isOnline());
+                    current.setLastIp(updatedFriend.getLastIp());
+                    current.setLastPort(updatedFriend.getLastPort());
 
-    // --- GETTERS ---
-    public ContactManager getContactManager() { return contactManager; }
-    public ChatManager getChatManager() { return chatManager; }
-    public CallHandler getCallHandler() { return callHandler; }
-    public NavigationHandler getNavigationHandler() { return navigationHandler; }
-
-    public void updateFriendInList(UserDTO friend) { contactManager.updateFriendInList(friend); }
-    public void addFriendToListDirectly(UserDTO friend) { contactManager.addFriendToListDirectly(friend); }
-    public void handleEndCallSignal() { callHandler.handleEndCallSignal(); }
-    // [MỚI] Hàm lọc tin nhắn
-    private void filterMessages(String keyword) {
-        if (msgContainer == null) return;
-        String search = (keyword == null) ? "" : keyword.toLowerCase().trim();
-
-        for (javafx.scene.Node node : msgContainer.getChildren()) {
-            if (node instanceof javafx.scene.layout.HBox) {
-                javafx.scene.layout.HBox row = (javafx.scene.layout.HBox) node;
-
-                // Lấy nội dung tin nhắn đã lưu ở Bước 1
-                Object userData = row.getUserData();
-
-                // Mặc định hiện tất cả
-                boolean isVisible = true;
-
-                // Nếu đang tìm kiếm và dòng này có chứa nội dung
-                if (!search.isEmpty() && userData instanceof String) {
-                    String content = (String) userData;
-                    if (!content.contains(search)) {
-                        isVisible = false; // Ẩn nếu không khớp từ khóa
+                    // 2. Chỉ cập nhật Tên/Avatar nếu dữ liệu mới KHÔNG BỊ NULL
+                    // (Tránh trường hợp gói tin báo offline chỉ gửi ID mà không gửi tên)
+                    if (updatedFriend.getDisplayName() != null && !updatedFriend.getDisplayName().isEmpty()) {
+                        current.setDisplayName(updatedFriend.getDisplayName());
                     }
-                } else if (!search.isEmpty() && userData == null) {
-                    // Ẩn các dòng không có nội dung text (ví dụ thông báo ngày tháng) khi đang tìm kiếm
-                    // Hoặc giữ lại tùy bạn. Ở đây mình ẩn cho gọn.
-                    isVisible = false;
+                    if (updatedFriend.getAvatarUrl() != null && !updatedFriend.getAvatarUrl().isEmpty()) {
+                        current.setAvatarUrl(updatedFriend.getAvatarUrl());
+                    }
+                    if (updatedFriend.getUsername() != null) { // Username thường dùng để check GROUP
+                        current.setUsername(updatedFriend.getUsername());
+                    }
+
+                    // 3. Ghi đè lại chính nó vào vị trí cũ để kích hoạt ListView vẽ lại (Refresh)
+                    masterData.set(i, current);
+                    found = true;
+                    break;
                 }
-
-                row.setVisible(isVisible);
-                row.setManaged(isVisible); // Co lại nếu ẩn
             }
-        }
+
+            // Nếu không tìm thấy (là bạn mới hoặc nhóm mới) thì thêm vào
+            if (!found) {
+                masterData.add(updatedFriend);
+            }
+        });
     }
-
-    // [MỚI] Hàm để ChatInfoController gọi sang: Bật/Tắt thanh tìm kiếm
-    public void toggleSearchMessage() {
-        if (searchMsgField == null) return;
-
-        boolean isShow = !searchMsgField.isVisible();
-        searchMsgField.setVisible(isShow);
-        searchMsgField.setManaged(isShow);
-
-        if (isShow) {
-            searchMsgField.requestFocus(); // Focus để gõ luôn
-        } else {
-            searchMsgField.clear(); // Xóa chữ và hiện lại tất cả tin nhắn khi tắt
-        }
+    public void addFriendToListDirectly(UserDTO newFriend) {
+        Platform.runLater(() -> {
+            boolean exists = masterData.stream().anyMatch(u -> u.getId() == newFriend.getId());
+            if (!exists) masterData.add(newFriend);
+        });
     }
-    // [ĐÃ SỬA LỖI] Xử lý xóa tin nhắn phía tôi
-    public void handleDeleteForMeAction(MessageDTO msg) {
-        if (msg == null) return;
-
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION, "Tin nhắn này sẽ bị ẩn khỏi lịch sử chat của BẠN.\nNgười kia vẫn sẽ nhìn thấy. Bạn chắc chứ?");
-        alert.setTitle("Xóa ở phía tôi");
-
-        alert.showAndWait().ifPresent(type -> {
-            if (type == ButtonType.OK) {
-                new Thread(() -> {
-                    try {
-                        long myId = SessionStore.currentUser.getId();
-                        // 1. Gọi Server lưu vào bảng hidden_messages
-                        boolean success = RmiClient.getMessageService().deleteMessageForUser(myId, msg.getId());
-
-                        if (success) {
-                            Platform.runLater(() -> {
-                                // 2. Xóa khỏi giao diện (Cách an toàn không bị ClassCastException)
-                                VBox bubble = messageUiMap.get(msg.getUuid());
-
-                                if (bubble != null) {
-                                    // Bắt đầu từ bong bóng, leo ngược lên trên để tìm cái HBox (Row) nằm trong msgContainer
-                                    javafx.scene.Node nodeToDelete = bubble;
-
-                                    // Vòng lặp: Leo lên cha cho đến khi cha của nó chính là msgContainer
-                                    while (nodeToDelete.getParent() != null && nodeToDelete.getParent() != msgContainer) {
-                                        nodeToDelete = nodeToDelete.getParent();
-                                    }
-
-                                    // Nếu tìm thấy và cha nó đúng là msgContainer -> Xóa nó đi
-                                    if (nodeToDelete != null && nodeToDelete.getParent() == msgContainer) {
-                                        msgContainer.getChildren().remove(nodeToDelete);
-                                        // Xóa khỏi map quản lý để giải phóng bộ nhớ
-                                        messageUiMap.remove(msg.getUuid());
-                                    }
-                                } else {
-                                    // Trường hợp hiếm: Không tìm thấy bong bóng -> Load lại cho chắc
-                                    chatManager.switchChat(currentChatUser);
-                                }
-                            });
-                        }
-                    } catch (Exception e) { e.printStackTrace(); }
-                }).start();
+    public void updateSenderNameInUI(long userId, String newName) {
+        Platform.runLater(() -> {
+            // Duyệt qua tất cả các tin nhắn đang hiện
+            for (Node row : msgContainer.getChildren()) {
+                // Gọi hàm đệ quy để tìm cái Label tên nằm sâu bên trong
+                updateNameLabelRecursive(row, userId, newName);
             }
         });
     }
 
-    // Xử lý Ghim tin nhắn
-    public void handlePinAction(MessageDTO msg) {
-        new Thread(() -> {
-            try {
-                boolean newStatus = !msg.isPinned(); // Đảo trạng thái (Ghim <-> Bỏ ghim)
-                boolean ok = RmiClient.getMessageService().pinMessage(msg.getId(), newStatus);
-                if(ok) {
-                    Platform.runLater(() -> {
-                        msg.setPinned(newStatus);
-                        Alert a = new Alert(Alert.AlertType.INFORMATION, newStatus ? "Đã ghim tin nhắn!" : "Đã bỏ ghim!");
-                        a.show();
-                    });
+    private void updateNameLabelRecursive(Node node, long userId, String newName) {
+        if (node instanceof Label) {
+            Label lbl = (Label) node;
+            // Tìm đúng cái Label đã được đánh dấu trong ChatUIHelper
+            if ("NAME_LABEL".equals(lbl.getProperties().get("TYPE")) &&
+                    lbl.getProperties().get("USER_ID") != null &&
+                    (long) lbl.getProperties().get("USER_ID") == userId) {
+
+                lbl.setText(newName);
+            }
+        } else if (node instanceof javafx.scene.Parent) {
+            for (Node child : ((javafx.scene.Parent) node).getChildrenUnmodifiable()) {
+                updateNameLabelRecursive(child, userId, newName);
+            }
+        }
+    }
+    public void updateCurrentChatName(long id, String newName) {
+        Platform.runLater(() -> {
+            // Chỉ cập nhật nếu đang mở đúng cuộc trò chuyện đó
+            if (currentChatUser != null && currentChatUser.getId() == id) {
+                // 1. Cập nhật dữ liệu đệm
+                currentChatUser.setDisplayName(newName);
+
+                // 2. Cập nhật Tiêu đề ở giữa
+                if (currentChatTitle != null) {
+                    currentChatTitle.setText(newName);
                 }
-            } catch(Exception e) { e.printStackTrace(); }
-        }).start();
-    }
-    // [MỚI] Hàm cuộn tới tin nhắn và nháy màu
-    public void scrollToMessage(String uuid) {
-        VBox bubble = messageUiMap.get(uuid);
-        if (bubble != null) {
-            // 1. Tính toán cuộn
-            // Lấy Node cha (HBox row) để tính vị trí chính xác hơn
-            Node row = bubble.getParent().getParent().getParent();
-            if (row != null) {
-                double contentHeight = msgContainer.getBoundsInLocal().getHeight();
-                double nodeY = row.getBoundsInParent().getMinY();
-                double vValue = nodeY / contentHeight;
-                msgScrollPane.setVvalue(vValue);
-            }
 
-            // 2. Hiệu ứng nháy vàng (Flash)
-            // Xóa class cũ nếu có để reset hiệu ứng
-            bubble.getStyleClass().remove("highlight-bubble");
-
-            // Thêm class để kích hoạt animation
-            Platform.runLater(() -> {
-                bubble.getStyleClass().add("highlight-bubble");
-
-                // Sau 2 giây tự tắt
-                new Thread(() -> {
-                    try { Thread.sleep(2000); } catch (InterruptedException e) {}
-                    Platform.runLater(() -> bubble.getStyleClass().remove("highlight-bubble"));
-                }).start();
-            });
-        } else {
-            Alert alert = new Alert(Alert.AlertType.INFORMATION, "Tin nhắn này chưa được tải (nằm ở trang cũ).\nHãy cuộn lên để tải thêm!");
-            alert.show();
-        }
-    }
-    // Xử lý sự kiện Ghim/Bỏ ghim từ Server báo về (Real-time)
-    public void handleRemoteMessageUpdate(String uuid, String actionType) {
-        // 1. Tìm bong bóng chat đang hiển thị
-        VBox bubble = messageUiMap.get(uuid);
-
-        if (bubble != null) {
-            boolean isPinned = "PIN".equals(actionType); // True nếu là hành động GHIM
-
-            // 2. Cập nhật Giao diện (Thêm/Xóa viền vàng)
-            if (isPinned) {
-                if (!bubble.getStyleClass().contains("pinned-bubble")) {
-                    bubble.getStyleClass().add("pinned-bubble");
+                // 3. Cập nhật Sidebar bên phải (Info Panel)
+                // Kiểm tra xem Sidebar có đang mở không
+                if (mainBorderPane.getRight() != null && chatInfoController != null) {
+                    // Gọi hàm nạp lại thông tin cho Sidebar
+                    chatInfoController.setUserInfo(currentChatUser);
                 }
-            } else {
-                bubble.getStyleClass().remove("pinned-bubble");
             }
-
-            // 3. [QUAN TRỌNG] Cập nhật dữ liệu ngầm (MessageDTO)
-            // Để lần sau bạn chuột phải, menu sẽ hiện đúng là "Bỏ ghim" hay "Ghim"
-            if (bubble.getUserData() instanceof MessageDTO) {
-                MessageDTO msg = (MessageDTO) bubble.getUserData();
-                msg.setPinned(isPinned);
-            }
-        }
-
-        // 4. Nếu đang mở Sidebar "Tin nhắn đã ghim", hãy refresh lại nó nếu cần
-        // (Hiện tại Sidebar của bạn dùng nút bấm để tải lại nên không cần auto-refresh cũng được)
+        });
     }
-    // [THÊM MỚI] Hàm áp dụng màu nền cho khung chat
-    public void applyThemeColor(String hexColor) {
-        if (chatArea != null) {
-            // Đổi màu nền của VBox chatArea (hoặc msgScrollPane tùy giao diện bạn)
-            chatArea.setStyle("-fx-background-color: " + hexColor + ";");
-
-            // Nếu màu tối quá thì đổi chữ thành màu trắng, sáng thì chữ đen (Tùy chọn nâng cao)
-        }
-    }
+    public void handleEndCallSignal() { callHandler.handleEndCallSignal(); }
     public void handleRemoteThemeUpdate(long conversationId, String newColor) {
-        // Kiểm tra: Nếu tin báo đổi màu trùng với cuộc hội thoại đang mở -> Đổi luôn
-        if (this.activeConversationId == conversationId) {
-            applyThemeColor(newColor);
-        }
+        if (this.activeConversationId == conversationId) applyThemeColor(newColor);
     }
+    // Getters
+    public ContactManager getContactManager() { return contactManager; }
+    public ChatManager getChatManager() { return chatManager; }
+    public CallHandler getCallHandler() { return callHandler; }
+    public NavigationHandler getNavigationHandler() { return navigationHandler; }
+    public ObservableList<UserDTO> getMasterData() { return masterData; }
 }

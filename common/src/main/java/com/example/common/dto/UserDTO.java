@@ -53,4 +53,15 @@ public class UserDTO implements Serializable {
 
     @Override
     public String toString() { return displayName; }
+
+    private String lastMessage;
+
+    // [THÊM GETTER / SETTER]
+    public String getLastMessage() {
+        return lastMessage;
+    }
+
+    public void setLastMessage(String lastMessage) {
+        this.lastMessage = lastMessage;
+    }
 }
