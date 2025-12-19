@@ -103,23 +103,33 @@ public class MainController {
     }
     private void performLogout() {
         try {
-            // 2. Gửi tín hiệu Offline lên Server (Nếu có hàm này)
-            // Ví dụ: RmiClient.getUserService().logout(SessionStore.currentUser.getId());
-            // Nếu không có thì bỏ qua dòng trên
-
-            // 3. Xóa session hiện tại
-            SessionStore.currentUser = null;
-            if (chatManager != null) {
-                // Dừng các luồng background nếu cần thiết (ví dụ ghi âm, socket...)
+            // 1. Gửi tín hiệu Offline lên Server
+            // (Đảm bảo gọi đúng service AuthService hoặc UserService tùy vào code server của bạn)
+            if (SessionStore.currentUser != null) {
+                try {
+                    // Gọi hàm logout để cập nhật trạng thái trong DB
+                    RmiClient.getAuthService().logout(SessionStore.currentUser.getId());
+                } catch (Exception e) {
+                    System.err.println("Lỗi khi báo Offline cho server: " + e.getMessage());
+                }
             }
 
-            // 4. Đóng cửa sổ hiện tại (Main Window)
+            // 2. Xóa session lưu trữ cục bộ
+            SessionStore.currentUser = null;
+
+            // 3. Dừng các kết nối chạy ngầm (nếu có)
+            if (chatManager != null) {
+                // Nếu ChatManager có logic P2P cần đóng, hãy xử lý ở đây
+                // Ví dụ: mc.p2pClient.close();
+            }
+
+            // 4. Đóng cửa sổ chính (Main View) hiện tại -> "Thoát chương trình"
             Stage currentStage = (Stage) mainBorderPane.getScene().getWindow();
             currentStage.close();
 
-            // 5. Mở lại màn hình Đăng nhập (Login)
+            // 5. Tự động mở lại cửa sổ Đăng nhập -> "Khởi động lại"
             try {
-                // Hãy đảm bảo đường dẫn tới file login-view.fxml là đúng
+                // Đường dẫn file FXML dựa trên cấu trúc file bạn đã upload (/view/login-view.fxml)
                 FXMLLoader loader = new FXMLLoader(getClass().getResource("/view/login-view.fxml"));
                 Parent root = loader.load();
 
@@ -127,11 +137,13 @@ public class MainController {
                 loginStage.setTitle("Đăng nhập - Hybrid Messenger");
                 loginStage.setScene(new Scene(root));
                 loginStage.setResizable(false);
+
+                // Hiển thị màn hình đăng nhập mới
                 loginStage.show();
 
             } catch (IOException e) {
                 e.printStackTrace();
-                System.err.println("Lỗi không tìm thấy file login-view.fxml: " + e.getMessage());
+                System.err.println("Lỗi: Không tìm thấy file giao diện đăng nhập!");
             }
 
         } catch (Exception e) {
