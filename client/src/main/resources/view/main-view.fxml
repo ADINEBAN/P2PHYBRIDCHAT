@@ -52,6 +52,9 @@
                 <Button onAction="#handleOpenProfile" styleClass="btn-icon" text="⚙">
                     <tooltip><Tooltip text="Cài đặt hồ sơ"/></tooltip>
                 </Button>
+                <Button onAction="#handleLogout" styleClass="btn-icon" text="⏻" style="-fx-text-fill: #e74c3c; -fx-font-size: 16px;">
+                    <tooltip><Tooltip text="Đăng xuất"/></tooltip>
+                </Button>
             </HBox>
 
             <TextField fx:id="txtSearchFriend" promptText="Tìm kiếm trên Messenger..." styleClass="input-field" />

@@ -20,4 +20,5 @@ public interface AuthService extends Remote {
 
     // Hàm cũ resetPassword (bạn có thể giữ hoặc bỏ)
     boolean resetPassword(String username, String email, String newPassword) throws RemoteException;
+
 }

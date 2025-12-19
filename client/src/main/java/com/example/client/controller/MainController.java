@@ -27,7 +27,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonType;
+import javafx.stage.Stage;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
+import java.io.IOException;
 public class MainController {
 
     // --- FXML FIELDS ---
@@ -81,6 +87,57 @@ public class MainController {
     private CallHandler callHandler;
     private NavigationHandler navigationHandler;
     private RealTimeHandler realTimeHandler;
+    @FXML
+    public void handleLogout() {
+        // 1. Hiện hộp thoại xác nhận
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Đăng xuất");
+        alert.setHeaderText(null);
+        alert.setContentText("Bạn có chắc chắn muốn đăng xuất không?");
+
+        alert.showAndWait().ifPresent(response -> {
+            if (response == ButtonType.OK) {
+                performLogout();
+            }
+        });
+    }
+    private void performLogout() {
+        try {
+            // 2. Gửi tín hiệu Offline lên Server (Nếu có hàm này)
+            // Ví dụ: RmiClient.getUserService().logout(SessionStore.currentUser.getId());
+            // Nếu không có thì bỏ qua dòng trên
+
+            // 3. Xóa session hiện tại
+            SessionStore.currentUser = null;
+            if (chatManager != null) {
+                // Dừng các luồng background nếu cần thiết (ví dụ ghi âm, socket...)
+            }
+
+            // 4. Đóng cửa sổ hiện tại (Main Window)
+            Stage currentStage = (Stage) mainBorderPane.getScene().getWindow();
+            currentStage.close();
+
+            // 5. Mở lại màn hình Đăng nhập (Login)
+            try {
+                // Hãy đảm bảo đường dẫn tới file login-view.fxml là đúng
+                FXMLLoader loader = new FXMLLoader(getClass().getResource("/view/login-view.fxml"));
+                Parent root = loader.load();
+
+                Stage loginStage = new Stage();
+                loginStage.setTitle("Đăng nhập - Hybrid Messenger");
+                loginStage.setScene(new Scene(root));
+                loginStage.setResizable(false);
+                loginStage.show();
+
+            } catch (IOException e) {
+                e.printStackTrace();
+                System.err.println("Lỗi không tìm thấy file login-view.fxml: " + e.getMessage());
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 
     @FXML
     public void initialize() {
